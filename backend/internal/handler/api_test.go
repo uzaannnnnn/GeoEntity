@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,6 +17,7 @@ import (
 
 	"geoentity/backend/internal/entity"
 	"geoentity/backend/internal/repository"
+	_ "modernc.org/sqlite"
 )
 
 func newTestAPI(t *testing.T) (*API, *repository.SQLite, string) {
@@ -129,6 +131,57 @@ func TestEntityCRUDAndPersistence(t *testing.T) {
 	}
 	if err := reopened.Close(); err != nil {
 		t.Fatalf("close reopened repository: %v", err)
+	}
+}
+
+func TestV1APICompatibilityAfterLegacyDatabaseBaseline(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+	legacy, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = legacy.Exec(`CREATE TABLE entities (
+		id TEXT PRIMARY KEY NOT NULL,
+		name TEXT NOT NULL CHECK(length(trim(name)) > 0),
+		type TEXT NOT NULL CHECK(type IN ('vehicle', 'iot_device', 'facility', 'other')),
+		description TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL CHECK(status IN ('active', 'inactive', 'maintenance')),
+		latitude REAL NOT NULL CHECK(latitude >= -90 AND latitude <= 90),
+		longitude REAL NOT NULL CHECK(longitude >= -180 AND longitude <= 180),
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
+	CREATE INDEX idx_entities_created_at ON entities(created_at, id);
+	INSERT INTO entities VALUES ('00000000-0000-4000-8000-000000000099','Legacy facility','facility','Original data','active',12.5,-45.25,'2024-01-01T00:00:00Z','2024-01-01T00:00:00Z');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := repository.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("open and baseline V1 database: %v", err)
+	}
+	defer store.Close()
+	api := New(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	list := request(api, http.MethodGet, "/api/entities", "")
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"data":[`) || !strings.Contains(list.Body.String(), `"id":"00000000-0000-4000-8000-000000000099"`) || !strings.Contains(list.Body.String(), `"description":"Original data"`) {
+		t.Fatalf("legacy list contract changed: %d %s", list.Code, list.Body.String())
+	}
+	get := request(api, http.MethodGet, "/api/entities/00000000-0000-4000-8000-000000000099", "")
+	if get.Code != http.StatusOK || !strings.HasPrefix(strings.TrimSpace(get.Body.String()), `{"data":`) {
+		t.Fatalf("legacy detail contract changed: %d %s", get.Code, get.Body.String())
+	}
+	updated := request(api, http.MethodPut, "/api/entities/00000000-0000-4000-8000-000000000099", `{"name":"Legacy facility","type":"facility","description":"Updated through V1 API","status":"maintenance","latitude":12.5,"longitude":-45.25}`)
+	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), `"description":"Updated through V1 API"`) {
+		t.Fatalf("legacy update contract changed: %d %s", updated.Code, updated.Body.String())
+	}
+	deleted := request(api, http.MethodDelete, "/api/entities/00000000-0000-4000-8000-000000000099", "")
+	if deleted.Code != http.StatusNoContent || deleted.Body.Len() != 0 {
+		t.Fatalf("legacy delete contract changed: %d %s", deleted.Code, deleted.Body.String())
 	}
 }
 

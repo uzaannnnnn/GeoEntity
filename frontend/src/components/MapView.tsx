@@ -6,6 +6,7 @@ import { formatCoordinate } from '../utils/formatters';
 import { StatusBadge } from './StatusBadge';
 import { TypeBadge } from './TypeBadge';
 import { flyToEntity } from '../utils/entityNavigation';
+import { getMapTileConfig } from '../utils/mapConfig';
 
 // Helper to generate inline SVG strings for divIcon
 function getIconSvg(type: EntityType): string {
@@ -153,6 +154,9 @@ interface MapViewProps {
   onBoundsFitted: () => void;
   onViewDetailsClick?: (entity: Entity) => void;
   onEditClick?: (entity: Entity) => void;
+  tileUrl?: string;
+  tileAttribution?: string;
+  maxZoom?: number;
 }
 
 export function MapView({
@@ -168,10 +172,22 @@ export function MapView({
   onBoundsFitted,
   onViewDetailsClick,
   onEditClick,
+  tileUrl: propTileUrl,
+  tileAttribution: propTileAttribution,
+  maxZoom: propMaxZoom,
 }: MapViewProps) {
   // Default map center (Jakarta coordinates from MVP examples or world view)
   const defaultCenter: LatLngExpression = useMemo(() => [-6.2088, 106.8456], []);
   const defaultZoom = 5;
+
+  const tileConfig = useMemo(() => {
+    const base = getMapTileConfig();
+    return {
+      url: propTileUrl?.trim() || base.url,
+      attribution: propTileAttribution?.trim() || base.attribution,
+      maxZoom: propMaxZoom ?? base.maxZoom,
+    };
+  }, [propTileUrl, propTileAttribution, propMaxZoom]);
 
   return (
     <div className={`map-wrapper ${isSelectingLocation ? 'picking-location' : ''}`}>
@@ -193,9 +209,9 @@ export function MapView({
         className="leaflet-map-container"
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maxZoom={19}
+          attribution={tileConfig.attribution}
+          url={tileConfig.url}
+          maxZoom={tileConfig.maxZoom}
         />
 
         <MapController
