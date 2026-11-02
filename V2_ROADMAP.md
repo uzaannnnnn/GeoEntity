@@ -1,6 +1,6 @@
 # GeoEntity V2 — Product Roadmap
 
-**Status:** V2.0 planning complete. V2.1 foundation implementation and independent QA are complete; V2.1E final Git closure is authorized. V2.2 requires explicit authorization.
+**Status:** V2.1 foundation and V2.2 Map Intelligence are closed. V2.2D QA verdict PASS with zero P0/P1 findings (user-reported). Browser interaction verification remains documented as unavailable in this environment. Next milestone is V2.3 Entity Model and Activity; it requires explicit authorization.
 
 ## Product direction
 
@@ -14,13 +14,13 @@ The V2 copy has a local, Git-ignored `backend/data/geoentity.db` with two entity
 
 | Area | Implemented now | V2 gap |
 |---|---|---|
-| Map | Leaflet/React Leaflet, configurable official OSM raster URL, attribution, zoom, custom entity markers, marker selection, auto-fit on initial/manual refresh, draft location click/drag | No clustering, locate-me, fit-all control, legend, coordinate inspector, or basemap switcher |
+| Map | Leaflet/React Leaflet, configurable official OSM raster URL, attribution, zoom, custom entity markers, marker selection, auto-fit on initial/manual refresh, draft location click/drag; V2.2 adds persisted-marker clustering, Locate Me, Fit All, legend, coordinate inspector/copy, and accessible controls | No basemap switcher; browser-level map interaction and rendering performance remain unverified |
 | Entities | List, simple name/description search, type/status filters, details, create/update/delete, UUIDs, UTC timestamps | No tags/categories/custom attributes, advanced server-side search, bulk import/export, or timeline |
 | Geospatial | Latitude/longitude validation and map visualization | No geometry model, geofence membership, spatial event history, or geometry test package |
 | IoT | Generic entity records can represent devices | No telemetry, sensor history, threshold alerts, ingestion, or simulator |
 | Backend | Go `net/http`, `database/sql`, repository abstraction, SQLite, JSON REST CRUD, input validation and error envelopes | No authentication/authorization, pagination, rate limiting, OpenAPI document, or production deployment config |
 | Database | `entities` plus `schema_migrations`; ordered embedded migration runner, SHA-256 checksums, V1 recognition | No feature tables for tags, activity, geofences, or telemetry |
-| Quality | Backend handler/persistence tests; frontend API/validation/formatting/state/navigation unit tests; TypeScript/Vite build | No browser E2E or map interaction harness; no import/geofence/telemetry tests yet |
+| Quality | Backend handler/persistence tests; frontend API/validation/formatting/state/navigation and V2.2 map utility tests; TypeScript/Vite build | No browser E2E or mounted Leaflet interaction harness; no import/geofence/telemetry tests yet |
 
 ### Current implementation quality
 
@@ -103,7 +103,7 @@ The entity list endpoint currently loads all rows. This is acceptable for the ta
 |---|---|---|---|
 | V2.0 — Planning baseline | This inventory, V2 architecture/contract/roadmap, preserve the existing DB and API | None | Human approves scope, data semantics, and next sprint; no feature code changed |
 | V2.1 — Safe evolution foundation | **COMPLETED (V2.1A–V2.1E).** Versioned SQLite migrations, legacy DB backup/baseline, compatibility tests, OSM URL/config compliance, integration and independent QA | V2.0 approval | Existing two-row DB preserved; migration rerun safe; V1 API tests pass; OSM configuration and frontend/backend regression pass |
-| V2.2 — Map Intelligence | Fit-all, locate-me, legend/coordinate inspector, clustering; basemap only after policy decision | V2.1; existing map | Manual/browser tests and marker-scale test pass; OSM attribution/provider compliance documented |
+| V2.2 — Map Intelligence | **CLOSED (V2.2A–V2.2E).** Persisted-entity clustering, one-shot Locate Me, Fit All, legend, coordinate inspector/copy, accessible toolbar; no backend/API/schema changes | V2.1; existing map | Backend/frontend regressions and isolated HTTP CRUD verification pass; V2.2D QA verdict PASS with zero P0/P1 findings per user. Browser interaction verification is a documented limitation because no browser executable/harness was available; local API benchmarks do not claim browser performance. OSM attribution/provider compliance retained. |
 | V2.3 — Entity model and activity | Custom-attribute semantics, tags/categories, append-only mutation activity, safe additive schema | V2.1 | Old CRUD clients work; new data validated; mutation+activity atomicity tested |
 | V2.4 — Search and bulk data | Server filtering/pagination, CSV/GeoJSON preview/import/export, atomic commit | V2.3 | Full validation precedes transaction; rollback, limits, duplicate policy, round-trip tests pass |
 | V2.5 — Geospatial intelligence | Geometry contract/library decision, circle/polygon validation, membership/event transitions, history | V2.3; telemetry/auth not required for local single-user evaluation | Pure geometry tests plus transaction/idempotency tests pass |
@@ -150,3 +150,12 @@ V2.3 and V2.2 can be planned in parallel by the human team, but execution should
 - [x] V2.1A–V2.1C implementation and integration checks passed.
 - [x] V2.1D verdict PASS; no P0/P1 findings and all V2.1 regression tests passed, per user-provided report.
 - [x] V2.1E handoff and roadmap updated; final V2.1 commit explicitly authorized; no V2.2 implementation started.
+
+## V2.2 closure
+
+- [x] V2.2A implementation contract and handoff prepared without source changes.
+- [x] V2.2B implemented all six Map Intelligence features with `react-leaflet-cluster@4.1.3`; V1 API, backend source, and database schema were unchanged.
+- [x] V2.2C backend/frontend regressions, production build, isolated Vite proxy HTTP CRUD, and restart persistence passed. Local API-only benchmark measurements were recorded separately from browser performance.
+- [x] V2.2D verdict PASS with zero P0/P1 findings; source-level/architectural review passed all six Map Intelligence capabilities. User-authorized P2 observations: entity listing is unpaginated (pagination planned for V2.4), and SQLite uses one connection (concurrency evaluation deferred until telemetry workload requires it). The standalone QA report was unavailable in the workspace; this remains a documentation limitation, not evidence of audit failure.
+- [x] V2.2E final backend/frontend regression passed and documentation updated. The authorized commit message is `feat: add GeoEntity V2.2 map intelligence`. Browser-driven cluster, geolocation, keyboard, and responsive checks remain unverified due to missing browser tooling.
+- [ ] V2.3 Entity Model and Activity requires explicit human authorization; define tags/categories/custom attribute semantics and append-only activity contract before implementation.
