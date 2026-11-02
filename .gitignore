@@ -1,0 +1,18 @@
+# Go build output
+/backend/bin/
+/backend/api
+/backend/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Local environment files
+.env
+.env.*
+!/backend/.env.example
+!/frontend/.env.example
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
