@@ -30,6 +30,12 @@ describe('validateEntityInput', () => {
     // @ts-expect-error testing invalid type
     const err = validateEntityInput({ ...validPayload, type: 'airplane' });
     expect(err.type).toBe('Type must be one of: vehicle, iot_device, facility, other');
+
+    for (const type of ['sensor', 'person']) {
+      expect(validateEntityInput({ ...validPayload, type: type as never }).type).toBe(
+        'Type must be one of: vehicle, iot_device, facility, other'
+      );
+    }
   });
 
   it('accepts all allowed types', () => {

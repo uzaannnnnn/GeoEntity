@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { useMap, useMapEvents } from 'react-leaflet';
+import { useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Entity } from '../../types/entity';
 import { UserLocation } from '../../utils/geolocation';
 import { getValidEntityPoints, calculateFitTarget } from '../../utils/mapBounds';
 import { flyToEntity } from '../../utils/entityNavigation';
+import { subscribeToMapCenter } from '../../utils/mapCenter';
+import { canZoomToShowMarker } from '../../utils/mapMarkerReveal';
 
 interface MapControllerProps {
   entities: Entity[];
@@ -40,24 +42,13 @@ export function MapController({
   const handledCenterRequestRef = useRef(0);
   const handledFitAllRequestRef = useRef(0);
   const handledUserFlyRequestRef = useRef(0);
+  const onCenterChangeRef = useRef(onCenterChange);
+  onCenterChangeRef.current = onCenterChange;
 
-  // Track map camera center on moveend
-  useMapEvents({
-    moveend() {
-      if (onCenterChange) {
-        const c = map.getCenter();
-        onCenterChange(c.lat, c.lng);
-      }
-    },
-  });
-
-  // Report initial center once map mounts
+  // Keep one map listener for this map instance and report its initial center once.
   useEffect(() => {
-    if (onCenterChange) {
-      const c = map.getCenter();
-      onCenterChange(c.lat, c.lng);
-    }
-  }, [map, onCenterChange]);
+    return subscribeToMapCenter(map, onCenterChangeRef);
+  }, [map]);
 
   // Fit bounds helper for valid entity points
   const executeFit = (fitMaxZoom = maxZoom) => {
@@ -93,7 +84,7 @@ export function MapController({
     const marker = markerMapRef?.current.get(entity.id);
     const clusterGroup = clusterGroupRef?.current;
 
-    if (marker && clusterGroup && typeof clusterGroup.zoomToShowLayer === 'function') {
+    if (marker && clusterGroup && canZoomToShowMarker(clusterGroup, marker)) {
       clusterGroup.zoomToShowLayer(marker, () => {
         flyToEntity(map, entity);
       });

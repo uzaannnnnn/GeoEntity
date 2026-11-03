@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Entity, EntityInput, SidePanelMode } from './types/entity';
 import { entitiesApi } from './api/entities';
 import { ApiError } from './api/client';
@@ -9,7 +9,9 @@ import { EntityDetail } from './components/EntityDetail';
 import { EntityForm } from './components/EntityForm';
 import { DeleteModal } from './components/DeleteModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
+import { AttributeDefinitionsModal } from './components/advanced/AttributeDefinitionsModal';
 import { removeEntity, upsertEntity } from './utils/entityState';
+import { RequestGuard } from './utils/requestGuard';
 
 export function App() {
   // Core entity state loaded strictly from backend
@@ -25,6 +27,8 @@ export function App() {
   const [draftLocation, setDraftLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [shouldFitBounds, setShouldFitBounds] = useState<boolean>(false);
   const [centerRequest, setCenterRequest] = useState(0);
+  const [isDefinitionsModalOpen, setIsDefinitionsModalOpen] = useState<boolean>(false);
+  const panelRequestGuard = useRef(new RequestGuard()).current;
 
   // Form error feedback
   const [formBackendError, setFormBackendError] = useState<string | null>(null);
@@ -131,43 +135,48 @@ export function App() {
 
   // Handlers for selection
   const handleSelectEntity = useCallback((entity: Entity) => {
+    panelRequestGuard.invalidate();
     setSelectedEntity(entity);
     setSidePanelMode('detail');
     setIsSelectingLocation(false);
     setDraftLocation(null);
-  }, []);
+  }, [panelRequestGuard]);
 
   const handleBackToList = useCallback(() => {
+    panelRequestGuard.invalidate();
     setSidePanelMode('list');
     setSelectedEntity(null);
     setIsSelectingLocation(false);
     setDraftLocation(null);
-  }, []);
+  }, [panelRequestGuard]);
 
   // Handlers for Add / Create
   const handleStartCreate = useCallback(() => {
+    panelRequestGuard.invalidate();
     setSelectedEntity(null);
     setSidePanelMode('create');
     setIsSelectingLocation(true);
     setDraftLocation(null);
     setFormBackendError(null);
     setFormBackendField(undefined);
-  }, []);
+  }, [panelRequestGuard]);
 
   // Handlers for Edit
   const handleStartEdit = useCallback((entity: Entity) => {
+    panelRequestGuard.invalidate();
     setSelectedEntity(entity);
     setSidePanelMode('edit');
     setIsSelectingLocation(false);
     setDraftLocation({ lat: entity.latitude, lng: entity.longitude });
     setFormBackendError(null);
     setFormBackendField(undefined);
-  }, []);
+  }, [panelRequestGuard]);
 
   const handleCenterMap = useCallback((entity: Entity) => {
+    panelRequestGuard.invalidate();
     setSelectedEntity(entity);
     setCenterRequest((request) => request + 1);
-  }, []);
+  }, [panelRequestGuard]);
 
   // Location picking on map
   const handleLocationPicked = useCallback((lat: number, lng: number) => {
@@ -182,6 +191,7 @@ export function App() {
   // Form submissions
   const handleCreateSubmit = useCallback(
     async (payload: EntityInput) => {
+      const request = panelRequestGuard.begin();
       setFormBackendError(null);
       setFormBackendField(undefined);
 
@@ -189,12 +199,15 @@ export function App() {
         const created = await entitiesApi.create(payload);
         addToast('success', `Entity "${created.name}" created successfully.`, 'Created');
         setEntities((current) => upsertEntity(current, created));
-        setSelectedEntity(created);
-        setSidePanelMode('detail');
-        setIsSelectingLocation(false);
-        setDraftLocation(null);
+        if (panelRequestGuard.isCurrent(request)) {
+          setSelectedEntity(created);
+          setSidePanelMode('detail');
+          setIsSelectingLocation(false);
+          setDraftLocation(null);
+        }
         await fetchEntities(false, false, 'created');
       } catch (err) {
+        if (!panelRequestGuard.isCurrent(request)) return;
         if (err instanceof ApiError) {
           setFormBackendError(err.message);
           setFormBackendField(err.field);
@@ -207,12 +220,14 @@ export function App() {
         throw err;
       }
     },
-    [addToast, fetchEntities]
+    [addToast, fetchEntities, panelRequestGuard]
   );
 
   const handleUpdateSubmit = useCallback(
     async (payload: EntityInput) => {
       if (!selectedEntity) return;
+      const request = panelRequestGuard.begin();
+      const updatedEntityId = selectedEntity.id;
 
       setFormBackendError(null);
       setFormBackendField(undefined);
@@ -221,12 +236,15 @@ export function App() {
         const updated = await entitiesApi.update(selectedEntity.id, payload);
         addToast('success', `Entity "${updated.name}" updated successfully.`, 'Updated');
         setEntities((current) => upsertEntity(current, updated));
-        setSelectedEntity(updated);
-        setSidePanelMode('detail');
-        setIsSelectingLocation(false);
-        setDraftLocation(null);
+        if (panelRequestGuard.isCurrent(request)) {
+          setSelectedEntity((current) => current?.id === updatedEntityId ? updated : current);
+          setSidePanelMode((current) => current === 'edit' ? 'detail' : current);
+          setIsSelectingLocation(false);
+          setDraftLocation(null);
+        }
         await fetchEntities(false, false, 'updated');
       } catch (err) {
+        if (!panelRequestGuard.isCurrent(request)) return;
         if (err instanceof ApiError) {
           setFormBackendError(err.message);
           setFormBackendField(err.field);
@@ -239,7 +257,7 @@ export function App() {
         throw err;
       }
     },
-    [selectedEntity, addToast, fetchEntities]
+    [selectedEntity, addToast, fetchEntities, panelRequestGuard]
   );
 
   // Deletion handling
@@ -291,6 +309,7 @@ export function App() {
           fetchEntities(true, true);
           checkHealth();
         }}
+        onManageDefinitionsClick={() => setIsDefinitionsModalOpen(true)}
         isCreateActive={sidePanelMode === 'create'}
       />
 
@@ -332,11 +351,13 @@ export function App() {
 
           {sidePanelMode === 'detail' && selectedEntity && (
             <EntityDetail
+              key={selectedEntity.id}
               entity={selectedEntity}
               onBack={handleBackToList}
               onEdit={handleStartEdit}
               onDelete={handleStartDelete}
               onCenterMap={handleCenterMap}
+              onToast={addToast}
             />
           )}
 
@@ -382,6 +403,13 @@ export function App() {
             setDeleteError(null);
           }
         }}
+      />
+
+      {/* Attribute Definitions Schema Manager Modal */}
+      <AttributeDefinitionsModal
+        isOpen={isDefinitionsModalOpen}
+        onClose={() => setIsDefinitionsModalOpen(false)}
+        onToast={addToast}
       />
 
       {/* Notification Toast Stack */}

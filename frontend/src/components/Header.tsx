@@ -1,4 +1,4 @@
-import { LogoIcon, PlusIcon, RefreshIcon } from './Icons';
+import { LogoIcon, PlusIcon, RefreshIcon, AttributesIcon } from './Icons';
 
 interface HeaderProps {
   totalCount: number;
@@ -9,6 +9,7 @@ interface HeaderProps {
   isLoading: boolean;
   onAddClick: () => void;
   onRefreshClick: () => void;
+  onManageDefinitionsClick?: () => void;
   isCreateActive: boolean;
 }
 
@@ -21,6 +22,7 @@ export function Header({
   isLoading,
   onAddClick,
   onRefreshClick,
+  onManageDefinitionsClick,
   isCreateActive,
 }: HeaderProps) {
   return (
@@ -76,6 +78,18 @@ export function Header({
             {isHealthOk === true ? 'API Online' : isHealthOk === false ? 'API Offline' : 'Connecting...'}
           </span>
         </div>
+
+        {onManageDefinitionsClick && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onManageDefinitionsClick}
+            title="Configure custom attribute definitions"
+          >
+            <AttributesIcon size={16} />
+            <span>Attributes</span>
+          </button>
+        )}
 
         <button
           type="button"

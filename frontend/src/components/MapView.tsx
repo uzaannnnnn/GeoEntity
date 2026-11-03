@@ -12,6 +12,7 @@ import { MapController } from './map/MapController';
 import { MapToolbar } from './map/MapToolbar';
 import { MapLegend } from './map/MapLegend';
 import { CoordinateInspector } from './map/CoordinateInspector';
+import { updateMapCenter } from '../utils/mapCenter';
 
 // Map event listener for location picking clicks
 function MapEvents({
@@ -97,6 +98,10 @@ export function MapView({
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
   const [currentCenter, setCurrentCenter] = useState<{ lat: number; lng: number }>(defaultCenterCoordinates);
   const [fitAllRequest, setFitAllRequest] = useState<number>(0);
+
+  const handleCenterChange = useCallback((lat: number, lng: number) => {
+    setCurrentCenter((previous) => updateMapCenter(previous, { lat, lng }));
+  }, []);
 
   // References for cluster group and marker instances
   const clusterGroupRef = useRef<L.MarkerClusterGroup | null>(null);
@@ -208,7 +213,7 @@ export function MapView({
           userLocationFlyRequest={userLocationFlyRequest}
           clusterGroupRef={clusterGroupRef}
           markerMapRef={markerMapRef}
-          onCenterChange={(lat, lng) => setCurrentCenter({ lat, lng })}
+          onCenterChange={handleCenterChange}
           maxZoom={tileConfig.maxZoom}
         />
 

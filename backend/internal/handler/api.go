@@ -43,6 +43,10 @@ type errorBody struct {
 }
 
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/attribute-definitions") || strings.HasPrefix(r.URL.Path, "/api/tags") || strings.HasPrefix(r.URL.Path, "/api/categories") || (strings.HasPrefix(r.URL.Path, "/api/entities/") && (strings.HasSuffix(r.URL.Path, "/attributes") || strings.HasSuffix(r.URL.Path, "/tags") || strings.HasSuffix(r.URL.Path, "/categories") || strings.HasSuffix(r.URL.Path, "/activity"))) {
+		a.advanced(w, r)
+		return
+	}
 	if r.URL.Path == "/api/health" {
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w)
@@ -120,6 +124,10 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	item := entity.Entity{ID: uuid.NewString(), Name: input.Name, Type: input.Type, Description: input.Description, Status: input.Status, Latitude: input.Latitude, Longitude: input.Longitude, CreatedAt: now, UpdatedAt: now}
 	if err := a.store.Create(r.Context(), item); err != nil {
+		if errors.Is(err, repository.ErrActivityPayloadTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "Activity snapshot exceeds the maximum size", "")
+			return
+		}
 		a.internalError(w, err)
 		return
 	}
@@ -152,6 +160,10 @@ func (a *API) update(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Entity not found", "")
 		return
 	} else if err != nil {
+		if errors.Is(err, repository.ErrActivityPayloadTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "Activity snapshot exceeds the maximum size", "")
+			return
+		}
 		a.internalError(w, err)
 		return
 	}
@@ -166,6 +178,10 @@ func (a *API) delete(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Entity not found", "")
 		return
 	} else if err != nil {
+		if errors.Is(err, repository.ErrActivityPayloadTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "Activity snapshot exceeds the maximum size", "")
+			return
+		}
 		a.internalError(w, err)
 		return
 	}

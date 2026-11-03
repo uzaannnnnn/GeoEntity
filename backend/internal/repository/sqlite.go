@@ -343,40 +343,105 @@ func (r *SQLite) Get(ctx context.Context, id string) (entity.Entity, error) {
 }
 
 func (r *SQLite) Create(ctx context.Context, item entity.Entity) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO entities (id, name, type, description, status, latitude, longitude, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		item.ID, item.Name, item.Type, item.Description, item.Status, item.Latitude, item.Longitude, item.CreatedAt.UTC().Format(time.RFC3339Nano), item.UpdatedAt.UTC().Format(time.RFC3339Nano))
-	return err
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO entities (id, name, type, description, status, latitude, longitude, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, item.ID, item.Name, item.Type, item.Description, item.Status, item.Latitude, item.Longitude, item.CreatedAt.UTC().Format(time.RFC3339Nano), item.UpdatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if err = insertActivity(ctx, tx, item.ID, "entity.created", map[string]any{"entity": activityEntity(item)}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *SQLite) Update(ctx context.Context, item entity.Entity) error {
-	result, err := r.db.ExecContext(ctx, `UPDATE entities SET name = ?, type = ?, description = ?, status = ?, latitude = ?, longitude = ?, updated_at = ? WHERE id = ?`,
-		item.Name, item.Type, item.Description, item.Status, item.Latitude, item.Longitude, item.UpdatedAt.UTC().Format(time.RFC3339Nano), item.ID)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	count, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if count == 0 {
+	defer tx.Rollback()
+	previous, err := scanEntity(tx.QueryRowContext(ctx, `SELECT id,name,type,description,status,latitude,longitude,created_at,updated_at FROM entities WHERE id=?`, item.ID))
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE entities SET name=?,type=?,description=?,status=?,latitude=?,longitude=?,updated_at=? WHERE id=?`, item.Name, item.Type, item.Description, item.Status, item.Latitude, item.Longitude, item.UpdatedAt.UTC().Format(time.RFC3339Nano), item.ID); err != nil {
+		return err
+	}
+	if err = insertActivity(ctx, tx, item.ID, "entity.updated", map[string]any{"before": activityEntity(previous), "after": activityEntity(item)}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *SQLite) Delete(ctx context.Context, id string) error {
-	result, err := r.db.ExecContext(ctx, `DELETE FROM entities WHERE id = ?`, id)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	count, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if count == 0 {
+	defer tx.Rollback()
+	item, err := scanEntity(tx.QueryRowContext(ctx, `SELECT id,name,type,description,status,latitude,longitude,created_at,updated_at FROM entities WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	snapshot := map[string]any{"entity": activityEntity(item)}
+	for _, spec := range []struct {
+		key, query string
+		keyed      bool
+	}{
+		{"attributes", `SELECT d.key,CASE d.value_type WHEN 'string' THEN v.text_value WHEN 'number' THEN v.number_value ELSE v.boolean_value END FROM entity_attribute_values v JOIN attribute_definitions d ON d.id=v.definition_id WHERE v.entity_id=? ORDER BY d.key`, true},
+		{"tags", `SELECT t.name FROM entity_tags x JOIN tags t ON t.id=x.tag_id WHERE x.entity_id=? ORDER BY t.normalized_name`, false},
+		{"categories", `SELECT c.name FROM entity_categories x JOIN categories c ON c.id=x.category_id WHERE x.entity_id=? ORDER BY c.normalized_name`, false},
+	} {
+		var values any
+		if spec.keyed {
+			values = map[string]any{}
+		} else {
+			values = []any{}
+		}
+		rows, e := tx.QueryContext(ctx, spec.query, id)
+		if e != nil {
+			return e
+		}
+		for rows.Next() {
+			var k string
+			var v any
+			if spec.keyed {
+				if e = rows.Scan(&k, &v); e != nil {
+					rows.Close()
+					return e
+				}
+				values.(map[string]any)[k] = v
+			} else {
+				if e = rows.Scan(&v); e != nil {
+					rows.Close()
+					return e
+				}
+				values = append(values.([]any), v)
+			}
+		}
+		e = rows.Err()
+		rows.Close()
+		if e != nil {
+			return e
+		}
+		snapshot[spec.key] = values
+	}
+	if err = insertActivity(ctx, tx, id, "entity.deleted", snapshot); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM entities WHERE id=?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 type scanner interface{ Scan(...any) error }

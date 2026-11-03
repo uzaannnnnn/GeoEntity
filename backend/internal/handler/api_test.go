@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -303,5 +304,228 @@ func TestRequestRejectsWrongContentTypeAndNonFiniteNumbers(t *testing.T) {
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("non-finite JSON status = %d, body = %s", response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestAdvancedMetadataAndActivityLifecycle(t *testing.T) {
+	api, _, _ := newTestAPI(t)
+	created := request(api, http.MethodPost, "/api/entities", `{"name":"Asset","type":"vehicle","description":"","status":"active","latitude":1,"longitude":2}`)
+	if created.Code != 201 {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	var env struct {
+		Data entity.Entity `json:"data"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	id := env.Data.ID
+	df := request(api, http.MethodPost, "/api/attribute-definitions", `{"entity_type":"vehicle","key":"year","label":"Year","value_type":"number","required":true,"min_number":1900,"max_number":2100}`)
+	if df.Code != 201 {
+		t.Fatalf("definition: %d %s", df.Code, df.Body.String())
+	}
+	bad := request(api, http.MethodPut, "/api/entities/"+id+"/attributes", `{"values":{}}`)
+	if bad.Code != 400 {
+		t.Fatalf("required validation status %d", bad.Code)
+	}
+	attrs := request(api, http.MethodPut, "/api/entities/"+id+"/attributes", `{"values":{"year":2024}}`)
+	if attrs.Code != 200 {
+		t.Fatalf("attributes: %d %s", attrs.Code, attrs.Body.String())
+	}
+	// A legacy V1 update that omits metadata still succeeds, logs an event, and preserves typed values.
+	v1update := request(api, http.MethodPut, "/api/entities/"+id, `{"name":"Asset moved","type":"facility","description":"","status":"active","latitude":3,"longitude":4}`)
+	if v1update.Code != 200 {
+		t.Fatalf("legacy update: %d %s", v1update.Code, v1update.Body.String())
+	}
+	previous := request(api, http.MethodGet, "/api/entities/"+id+"/attributes", "")
+	if previous.Code != 200 || !strings.Contains(previous.Body.String(), `"vehicle.year":2024`) {
+		t.Fatalf("type change did not preserve prior values: %d %s", previous.Code, previous.Body.String())
+	}
+	tag := request(api, http.MethodPost, "/api/tags", `{"name":"  Fleet   Unit "}`)
+	if tag.Code != 201 {
+		t.Fatalf("tag: %d %s", tag.Code, tag.Body.String())
+	}
+	var catalog struct {
+		Data repository.CatalogItem `json:"data"`
+	}
+	_ = json.Unmarshal(tag.Body.Bytes(), &catalog)
+	assign := request(api, http.MethodPut, "/api/entities/"+id+"/tags", `{"tag_ids":["`+catalog.Data.ID+`","`+catalog.Data.ID+`"]}`)
+	if assign.Code != 200 {
+		t.Fatalf("assign: %d %s", assign.Code, assign.Body.String())
+	}
+	assignAgain := request(api, http.MethodPut, "/api/entities/"+id+"/tags", `{"tag_ids":["`+catalog.Data.ID+`"]}`)
+	if assignAgain.Code != 200 {
+		t.Fatalf("repeat assign: %d", assignAgain.Code)
+	}
+	page := request(api, http.MethodGet, "/api/entities/"+id+"/activity?limit=100", "")
+	if page.Code != 200 {
+		t.Fatalf("activity: %d %s", page.Code, page.Body.String())
+	}
+	var events struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(page.Body.Bytes(), &events); err != nil {
+		t.Fatal(err)
+	}
+	if len(events.Data) != 4 {
+		t.Fatalf("expected create, update, attribute, tag events; got %d: %s", len(events.Data), page.Body.String())
+	}
+	// Exercise the delete repository path directly here to retain its diagnostic.
+	if err := api.store.Delete(context.Background(), id); err != nil {
+		t.Fatalf("delete repository: %v", err)
+	}
+	history := request(api, http.MethodGet, "/api/entities/"+id+"/activity", "")
+	if history.Code != 200 || !strings.Contains(history.Body.String(), "entity.deleted") {
+		t.Fatalf("deleted history unavailable: %d %s", history.Code, history.Body.String())
+	}
+}
+
+func TestContractEntityTypesAreConsistentForEntitiesAndDefinitions(t *testing.T) {
+	api, store, _ := newTestAPI(t)
+	allowed := []string{"vehicle", "iot_device", "facility", "other"}
+	for index, typ := range allowed {
+		body := `{"name":"type-` + typ + `","type":"` + typ + `","status":"active","latitude":0,"longitude":0}`
+		if response := request(api, http.MethodPost, "/api/entities", body); response.Code != http.StatusCreated {
+			t.Fatalf("entity type %q rejected: %d %s", typ, response.Code, response.Body.String())
+		}
+		definition := `{"entity_type":"` + typ + `","key":"key_` + strconv.Itoa(index) + `","label":"Field","value_type":"string","required":false}`
+		if response := request(api, http.MethodPost, "/api/attribute-definitions", definition); response.Code != http.StatusCreated {
+			t.Fatalf("attribute entity type %q rejected: %d %s", typ, response.Code, response.Body.String())
+		}
+	}
+
+	for _, typ := range []string{"sensor", "person"} {
+		entityBody := `{"name":"type-` + typ + `","type":"` + typ + `","status":"active","latitude":0,"longitude":0}`
+		if response := request(api, http.MethodPost, "/api/entities", entityBody); response.Code != http.StatusBadRequest {
+			t.Errorf("unsupported entity type %q status=%d body=%s", typ, response.Code, response.Body.String())
+		}
+		definitionBody := `{"entity_type":"` + typ + `","key":"invalid","label":"Field","value_type":"string","required":false}`
+		if response := request(api, http.MethodPost, "/api/attribute-definitions", definitionBody); response.Code != http.StatusBadRequest {
+			t.Errorf("unsupported attribute type %q status=%d body=%s", typ, response.Code, response.Body.String())
+		}
+		if response := request(api, http.MethodGet, "/api/attribute-definitions?entity_type="+typ, ""); response.Code != http.StatusBadRequest {
+			t.Errorf("unsupported definition filter %q status=%d body=%s", typ, response.Code, response.Body.String())
+		}
+	}
+
+	items, err := store.List(context.Background())
+	if err != nil || len(items) != len(allowed) {
+		t.Fatalf("unsupported types should not be persisted: count=%d err=%v", len(items), err)
+	}
+}
+
+func TestAdvancedValidationLimitsAndImmutableHistory(t *testing.T) {
+	api, _, _ := newTestAPI(t)
+	created := request(api, http.MethodPost, "/api/entities", `{"name":"Typed","type":"vehicle","description":"","status":"active","latitude":0,"longitude":0}`)
+	var entityEnvelope struct {
+		Data entity.Entity `json:"data"`
+	}
+	if created.Code != 201 {
+		t.Fatalf("create=%d %s", created.Code, created.Body.String())
+	}
+	_ = json.Unmarshal(created.Body.Bytes(), &entityEnvelope)
+	id := entityEnvelope.Data.ID
+	definition := `{"entity_type":"vehicle","key":"year","label":"Year","value_type":"number","required":true,"min_number":1900,"max_number":2100}`
+	if response := request(api, http.MethodPost, "/api/attribute-definitions", definition); response.Code != 201 {
+		t.Fatalf("definition=%d %s", response.Code, response.Body.String())
+	}
+	if response := request(api, http.MethodPost, "/api/attribute-definitions", definition); response.Code != 409 {
+		t.Fatalf("duplicate definition=%d %s", response.Code, response.Body.String())
+	}
+	for _, body := range []string{`{"values":{"year":"2024"}}`, `{"values":{"year":2200}}`, `{"values":{"unknown":1}}`, `{"values":{}}`} {
+		if response := request(api, http.MethodPut, "/api/entities/"+id+"/attributes", body); response.Code != 400 {
+			t.Fatalf("invalid attribute body %s -> %d", body, response.Code)
+		}
+	}
+	if response := request(api, http.MethodPut, "/api/entities/"+id+"/attributes", `{"values":{"year":2024}}`); response.Code != 200 {
+		t.Fatalf("valid attributes=%d", response.Code)
+	}
+	var definitions struct {
+		Data []repository.Definition `json:"data"`
+	}
+	response := request(api, http.MethodGet, "/api/attribute-definitions?entity_type=vehicle", "")
+	if err := json.Unmarshal(response.Body.Bytes(), &definitions); err != nil || len(definitions.Data) != 1 {
+		t.Fatalf("definitions response=%s err=%v", response.Body.String(), err)
+	}
+	did := definitions.Data[0].ID
+	conflict := request(api, http.MethodPut, "/api/attribute-definitions/"+did, `{"label":"Year","required":true,"min_number":2050,"max_number":2100,"max_length":null,"archived":false}`)
+	if conflict.Code != 409 {
+		t.Fatalf("invalidating definition edit=%d %s", conflict.Code, conflict.Body.String())
+	}
+	archive := request(api, http.MethodPut, "/api/attribute-definitions/"+did, `{"label":"Year","required":false,"min_number":1900,"max_number":2100,"max_length":null,"archived":true}`)
+	if archive.Code != 200 {
+		t.Fatalf("archive=%d %s", archive.Code, archive.Body.String())
+	}
+	archivedWrite := request(api, http.MethodPut, "/api/entities/"+id+"/attributes", `{"values":{"year":2024}}`)
+	if archivedWrite.Code != 400 {
+		t.Fatalf("archived definition write=%d", archivedWrite.Code)
+	}
+	clearActive := request(api, http.MethodPut, "/api/entities/"+id+"/attributes", `{"values":{}}`)
+	if clearActive.Code != 200 {
+		t.Fatalf("replace with archived value present=%d %s", clearActive.Code, clearActive.Body.String())
+	}
+	readArchived := request(api, http.MethodGet, "/api/entities/"+id+"/attributes", "")
+	if !strings.Contains(readArchived.Body.String(), `"year":2024`) {
+		t.Fatalf("archived value was deleted: %s", readArchived.Body.String())
+	}
+	nameConflict := request(api, http.MethodPost, "/api/tags", `{"name":"Fleet  Team"}`)
+	if nameConflict.Code != 201 {
+		t.Fatalf("tag create=%d", nameConflict.Code)
+	}
+	duplicate := request(api, http.MethodPost, "/api/tags", `{"name":" fleet team "}`)
+	if duplicate.Code != 409 {
+		t.Fatalf("normalized duplicate=%d %s", duplicate.Code, duplicate.Body.String())
+	}
+	for i := 0; i < 50; i++ {
+		body := `{"entity_type":"other","key":"key_` + strconv.Itoa(i) + `","label":"Field","value_type":"boolean","required":false}`
+		if response := request(api, http.MethodPost, "/api/attribute-definitions", body); response.Code != 201 {
+			t.Fatalf("definition %d=%d %s", i, response.Code, response.Body.String())
+		}
+	}
+	last := request(api, http.MethodPost, "/api/attribute-definitions", `{"entity_type":"other","key":"key_over","label":"Field","value_type":"boolean","required":false}`)
+	if last.Code != 409 {
+		t.Fatalf("definition cap=%d %s", last.Code, last.Body.String())
+	}
+	invalidCursor := request(api, http.MethodGet, "/api/entities/"+id+"/activity?cursor=not_base64", "")
+	if invalidCursor.Code != 400 {
+		t.Fatalf("invalid cursor=%d", invalidCursor.Code)
+	}
+	zeroLimit := request(api, http.MethodGet, "/api/entities/"+id+"/activity?limit=0", "")
+	if zeroLimit.Code != 400 {
+		t.Fatalf("zero limit=%d", zeroLimit.Code)
+	}
+	method := request(api, http.MethodDelete, "/api/entities/"+id+"/activity/00000000-0000-4000-8000-000000000001", "")
+	if method.Code != 404 {
+		t.Fatalf("unexpected event mutation route=%d", method.Code)
+	}
+}
+
+func TestOversizedDescriptionIsPreservedAndActivitySnapshotIsBounded(t *testing.T) {
+	api, store, _ := newTestAPI(t)
+	large := strings.Repeat("x", 70<<10)
+	body, _ := json.Marshal(map[string]any{"name": "Large", "type": "vehicle", "description": large, "status": "active", "latitude": 0, "longitude": 0})
+	response := request(api, http.MethodPost, "/api/entities", string(body))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("V1 create status changed for long description: %d", response.Code)
+	}
+	var envelope struct {
+		Data entity.Entity `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Data.Description) != len(large) {
+		t.Fatalf("entity description was altered: got %d bytes", len(envelope.Data.Description))
+	}
+	items, err := store.List(context.Background())
+	if err != nil || len(items) != 1 {
+		t.Fatalf("entity persistence: count=%d err=%v", len(items), err)
+	}
+	history := request(api, http.MethodGet, "/api/entities/"+envelope.Data.ID+"/activity", "")
+	if history.Code != 200 || !strings.Contains(history.Body.String(), `"description_truncated":true`) {
+		t.Fatalf("bounded event summary missing: %d %s", history.Code, history.Body.String())
+	}
+	if len(history.Body.Bytes()) > repository.MaxActivityPayload+2048 {
+		t.Fatalf("activity response unexpectedly large: %d", len(history.Body.Bytes()))
 	}
 }

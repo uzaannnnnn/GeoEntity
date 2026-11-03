@@ -1,0 +1,17 @@
+/** Prevents a slower earlier request from replacing state produced by a newer request. */
+export class RequestGuard {
+  private generation = 0;
+
+  begin(): number {
+    this.generation += 1;
+    return this.generation;
+  }
+
+  isCurrent(generation: number): boolean {
+    return generation === this.generation;
+  }
+
+  invalidate(): void {
+    this.generation += 1;
+  }
+}
