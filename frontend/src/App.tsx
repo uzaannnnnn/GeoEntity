@@ -24,6 +24,9 @@ import { RequestGuard } from './utils/requestGuard';
 import { calculateExtentFitTarget } from './utils/mapViewport';
 import { FitTarget } from './utils/mapBounds';
 import { AnyMarkerEntity } from './components/map/EntityMarkerLayer';
+import { geofencesApi } from './api/geofences';
+import { GeofenceDefinition } from './types/geofence';
+import { GeofenceManagerModal, GeofenceModalTab } from './components/geofences/GeofenceManagerModal';
 
 export function App() {
   // 1. Paginated Entity List Data Source
@@ -59,6 +62,10 @@ export function App() {
   const [centerRequest, setCenterRequest] = useState(0);
   const [isDefinitionsModalOpen, setIsDefinitionsModalOpen] = useState<boolean>(false);
   const [isDataExchangeModalOpen, setIsDataExchangeModalOpen] = useState<boolean>(false);
+  const [isGeofencesModalOpen, setIsGeofencesModalOpen] = useState<boolean>(false);
+  const [geofencesModalInitialTab, setGeofencesModalInitialTab] = useState<GeofenceModalTab>('list');
+  const [geofences, setGeofences] = useState<GeofenceDefinition[]>([]);
+  const [selectedGeofence, setSelectedGeofence] = useState<GeofenceDefinition | null>(null);
   const [isHealthOk, setIsHealthOk] = useState<boolean | null>(null);
 
   // Request race condition guards
@@ -197,11 +204,22 @@ export function App() {
     }
   }, []);
 
+  // Fetch geofences list
+  const fetchGeofences = useCallback(async () => {
+    try {
+      const res = await geofencesApi.list({ limit: 100 });
+      setGeofences(res.data);
+    } catch (err) {
+      console.error('Failed to load geofences', err);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     fetchEntitiesList(activeFilters);
+    fetchGeofences();
     checkHealth();
-  }, [fetchEntitiesList, checkHealth]);
+  }, [fetchEntitiesList, fetchGeofences, checkHealth]);
 
   // Debounced map markers fetch when viewport bounds or active filters change
   useEffect(() => {
@@ -404,6 +422,7 @@ export function App() {
           setIsSelectingLocation(false);
           setDraftLocation(null);
         }
+        fetchGeofences();
       } catch (err) {
         if (!panelRequestGuard.isCurrent(request)) return;
         if (err instanceof ApiError) {
@@ -418,7 +437,7 @@ export function App() {
         throw err;
       }
     },
-    [addToast, panelRequestGuard]
+    [addToast, panelRequestGuard, fetchGeofences]
   );
 
   const handleUpdateSubmit = useCallback(
@@ -456,6 +475,7 @@ export function App() {
           setIsSelectingLocation(false);
           setDraftLocation(null);
         }
+        fetchGeofences();
       } catch (err) {
         if (!panelRequestGuard.isCurrent(request)) return;
         if (err instanceof ApiError) {
@@ -470,7 +490,7 @@ export function App() {
         throw err;
       }
     },
-    [selectedEntity, addToast, panelRequestGuard]
+    [selectedEntity, addToast, panelRequestGuard, fetchGeofences]
   );
 
   // Deletion handling
@@ -511,6 +531,7 @@ export function App() {
         setSelectedEntity(null);
         setSidePanelMode('list');
       }
+      fetchGeofences();
     } catch (err) {
       const msg =
         err instanceof ApiError
@@ -523,7 +544,7 @@ export function App() {
     } finally {
       setIsDeleting(false);
     }
-  }, [entityToDelete, selectedEntity, addToast]);
+  }, [entityToDelete, selectedEntity, addToast, fetchGeofences]);
 
   // Header status counts: derived authoritatively from server meta
   const { totalCount, activeCount, maintenanceCount, inactiveCount } = useMemo(() => {
@@ -555,13 +576,14 @@ export function App() {
         'Import Completed'
       );
       fetchEntitiesList(activeFilters);
+      fetchGeofences();
       if (currentViewportBounds) {
         fetchMapMarkers(currentViewportBounds, activeFilters);
       }
       handleFitAll();
       checkHealth();
     },
-    [addToast, fetchEntitiesList, activeFilters, currentViewportBounds, fetchMapMarkers, handleFitAll, checkHealth]
+    [addToast, fetchEntitiesList, fetchGeofences, activeFilters, currentViewportBounds, fetchMapMarkers, handleFitAll, checkHealth]
   );
 
   return (
@@ -576,6 +598,7 @@ export function App() {
         onAddClick={handleStartCreate}
         onRefreshClick={() => {
           fetchEntitiesList(activeFilters);
+          fetchGeofences();
           if (currentViewportBounds) {
             fetchMapMarkers(currentViewportBounds, activeFilters);
           }
@@ -583,6 +606,12 @@ export function App() {
         }}
         onManageDefinitionsClick={() => setIsDefinitionsModalOpen(true)}
         onDataExchangeClick={() => setIsDataExchangeModalOpen(true)}
+        onGeofencesClick={() => {
+          setGeofencesModalInitialTab('list');
+          setIsGeofencesModalOpen(true);
+        }}
+        isGeofencesActive={isGeofencesModalOpen}
+        geofenceCount={geofences.length}
         isCreateActive={sidePanelMode === 'create'}
       />
 
@@ -607,6 +636,14 @@ export function App() {
             fitTargetRequest={fitTargetRequest}
             onViewDetailsClick={handleSelectMapMarker}
             onEditClick={handleStartEdit}
+            geofences={geofences}
+            selectedGeofenceId={selectedGeofence?.id}
+            onSelectGeofence={(gf) => setSelectedGeofence(gf)}
+            onViewGeofenceEvents={(gf) => {
+              setSelectedGeofence(gf);
+              setGeofencesModalInitialTab('events');
+              setIsGeofencesModalOpen(true);
+            }}
           />
         </section>
 
@@ -642,6 +679,20 @@ export function App() {
               onDelete={handleStartDelete}
               onCenterMap={handleCenterMap}
               onToast={addToast}
+              onViewGeofenceEvents={(geofenceId) => {
+                const gf = geofences.find((g) => g.id === geofenceId);
+                if (gf) {
+                  setSelectedGeofence(gf);
+                }
+                setGeofencesModalInitialTab('events');
+                setIsGeofencesModalOpen(true);
+              }}
+              onSelectGeofenceOnMap={(geofenceId) => {
+                const gf = geofences.find((g) => g.id === geofenceId);
+                if (gf) {
+                  setSelectedGeofence(gf);
+                }
+              }}
             />
           )}
 
@@ -703,6 +754,38 @@ export function App() {
         activeFilters={activeFilters}
         matchingCount={totalCount}
         onImportSuccess={handleImportSuccess}
+      />
+
+      {/* Geofence Management and Transition Events Modal */}
+      <GeofenceManagerModal
+        isOpen={isGeofencesModalOpen}
+        onClose={() => setIsGeofencesModalOpen(false)}
+        geofences={geofences}
+        selectedGeofence={selectedGeofence}
+        onSelectGeofence={setSelectedGeofence}
+        onRefreshGeofences={fetchGeofences}
+        mapCenter={{
+          lat: selectedEntity?.latitude ?? draftLocation?.lat ?? -6.2088,
+          lng: selectedEntity?.longitude ?? draftLocation?.lng ?? 106.8456,
+        }}
+        onSelectEntity={(entityId) => {
+          const found = entities.find((e) => e.id === entityId);
+          if (found) {
+            handleSelectEntity(found);
+          } else {
+            handleSelectMapMarker({
+              id: entityId,
+              name: '',
+              type: 'facility',
+              status: 'active',
+              latitude: 0,
+              longitude: 0,
+            });
+          }
+          setIsGeofencesModalOpen(false);
+        }}
+        onToast={addToast}
+        initialTab={geofencesModalInitialTab}
       />
 
       {/* Notification Toast Stack */}

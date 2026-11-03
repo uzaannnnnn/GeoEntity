@@ -1,4 +1,4 @@
-import { LogoIcon, PlusIcon, RefreshIcon, AttributesIcon, DataExchangeIcon } from './Icons';
+import { LogoIcon, PlusIcon, RefreshIcon, AttributesIcon, DataExchangeIcon, GeofenceIcon } from './Icons';
 
 interface HeaderProps {
   totalCount: number;
@@ -11,6 +11,9 @@ interface HeaderProps {
   onRefreshClick: () => void;
   onManageDefinitionsClick?: () => void;
   onDataExchangeClick?: () => void;
+  onGeofencesClick?: () => void;
+  isGeofencesActive?: boolean;
+  geofenceCount?: number;
   isCreateActive: boolean;
 }
 
@@ -25,6 +28,9 @@ export function Header({
   onRefreshClick,
   onManageDefinitionsClick,
   onDataExchangeClick,
+  onGeofencesClick,
+  isGeofencesActive = false,
+  geofenceCount,
   isCreateActive,
 }: HeaderProps) {
   return (
@@ -103,6 +109,22 @@ export function Header({
           >
             <DataExchangeIcon size={16} />
             <span>Data Operations</span>
+          </button>
+        )}
+
+        {onGeofencesClick && (
+          <button
+            type="button"
+            className={`btn ${isGeofencesActive ? 'btn-highlight' : 'btn-secondary'}`}
+            onClick={onGeofencesClick}
+            title="Configure geofence boundaries and inspect spatial transition history"
+            aria-label="Open Geofences"
+          >
+            <GeofenceIcon size={16} />
+            <span>Geofences</span>
+            {typeof geofenceCount === 'number' && geofenceCount > 0 && (
+              <span className="badge-count-inline">{geofenceCount}</span>
+            )}
           </button>
         )}
 

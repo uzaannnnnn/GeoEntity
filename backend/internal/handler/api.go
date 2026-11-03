@@ -53,6 +53,14 @@ type errorBody struct {
 }
 
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/geofences" || strings.HasPrefix(r.URL.Path, "/api/geofences/") {
+		a.geofences(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/entities/") && strings.HasSuffix(r.URL.Path, "/geofences") {
+		a.entityGeofences(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/exports/") || strings.HasPrefix(r.URL.Path, "/api/imports/") {
 		a.exchange(w, r)
 		return

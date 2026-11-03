@@ -48,7 +48,12 @@ func Open(ctx context.Context, dsn string) (*SQLite, error) {
 		db.Close()
 		return nil, err
 	}
-	return &SQLite{db: db}, nil
+	store := &SQLite{db: db}
+	if err := store.backfillMissingGeofenceMemberships(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("initialize geofence memberships: %w", err)
+	}
+	return store, nil
 }
 
 func (r *SQLite) Close() error { return r.db.Close() }
@@ -354,6 +359,13 @@ func (r *SQLite) Create(ctx context.Context, item entity.Entity) error {
 	if err = insertActivity(ctx, tx, item.ID, "entity.created", map[string]any{"entity": activityEntity(item)}); err != nil {
 		return err
 	}
+	definitions, err := loadEnabledGeofencesTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if err := establishEntityMembershipsTx(ctx, tx, item, definitions, item.CreatedAt); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -370,7 +382,14 @@ func (r *SQLite) Update(ctx context.Context, item entity.Entity) error {
 	if err != nil {
 		return err
 	}
+	evaluations, err := prepareEntityMembershipUpdatesTx(ctx, tx, previous, item)
+	if err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE entities SET name=?,type=?,description=?,status=?,latitude=?,longitude=?,updated_at=? WHERE id=?`, item.Name, item.Type, item.Description, item.Status, item.Latitude, item.Longitude, item.UpdatedAt.UTC().Format(time.RFC3339Nano), item.ID); err != nil {
+		return err
+	}
+	if err := persistEntityMembershipUpdatesTx(ctx, tx, item, evaluations); err != nil {
 		return err
 	}
 	if err = insertActivity(ctx, tx, item.ID, "entity.updated", map[string]any{"before": activityEntity(previous), "after": activityEntity(item)}); err != nil {

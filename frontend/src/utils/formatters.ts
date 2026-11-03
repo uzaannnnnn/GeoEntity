@@ -50,3 +50,10 @@ export function formatStatusLabel(status: EntityStatus): string {
       return status;
   }
 }
+
+export function formatRadius(meters: number): string {
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(2)} km`;
+  }
+  return `${Math.round(meters)} m`;
+}

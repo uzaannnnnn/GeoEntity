@@ -11,13 +11,15 @@ import {
   AttributesIcon,
   TagIcon,
   ActivityIcon,
+  GeofenceIcon,
 } from './Icons';
 import { formatCoordinate, formatDateTime } from '../utils/formatters';
 import { AttributeValuesSection } from './advanced/AttributeValuesSection';
 import { TagsCategoriesSection } from './advanced/TagsCategoriesSection';
 import { ActivityTimelineSection } from './advanced/ActivityTimelineSection';
+import { EntityGeofencesSection } from './geofences/EntityGeofencesSection';
 
-export type EntityDetailTab = 'overview' | 'attributes' | 'tags' | 'activity';
+export type EntityDetailTab = 'overview' | 'attributes' | 'tags' | 'activity' | 'geofences';
 
 interface EntityDetailProps {
   entity: Entity;
@@ -26,6 +28,8 @@ interface EntityDetailProps {
   onDelete: (entity: Entity) => void;
   onCenterMap: (entity: Entity) => void;
   onToast?: (type: 'success' | 'error' | 'info', message: string, title?: string) => void;
+  onViewGeofenceEvents?: (geofenceId: string, geofenceName: string) => void;
+  onSelectGeofenceOnMap?: (geofenceId: string) => void;
 }
 
 export function EntityDetail({
@@ -35,6 +39,8 @@ export function EntityDetail({
   onDelete,
   onCenterMap,
   onToast = () => {},
+  onViewGeofenceEvents,
+  onSelectGeofenceOnMap,
 }: EntityDetailProps) {
   const [activeTab, setActiveTab] = useState<EntityDetailTab>('overview');
 
@@ -145,6 +151,18 @@ export function EntityDetail({
             <ActivityIcon size={15} />
             <span>Activity</span>
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'geofences'}
+            aria-controls="panel-geofences"
+            id="tab-geofences"
+            className={`detail-tab-btn ${activeTab === 'geofences' ? 'active' : ''}`}
+            onClick={() => setActiveTab('geofences')}
+          >
+            <GeofenceIcon size={15} />
+            <span>Geofences</span>
+          </button>
         </div>
 
         {/* Tab Panels */}
@@ -231,6 +249,22 @@ export function EntityDetail({
               className="tab-panel animate-fade-in"
             >
               <ActivityTimelineSection key={entity.id} entity={entity} />
+            </div>
+          )}
+
+          {activeTab === 'geofences' && (
+            <div
+              id="panel-geofences"
+              role="tabpanel"
+              aria-labelledby="tab-geofences"
+              className="tab-panel animate-fade-in"
+            >
+              <EntityGeofencesSection
+                key={entity.id}
+                entity={entity}
+                onViewGeofenceEvents={onViewGeofenceEvents}
+                onSelectGeofenceOnMap={onSelectGeofenceOnMap}
+              />
             </div>
           )}
         </div>

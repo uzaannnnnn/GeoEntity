@@ -9,6 +9,8 @@ import { normalizeLeafletBounds, areBoundsEqual } from '../utils/mapViewport';
 import { EntityMarkerLayer, AnyMarkerEntity } from './map/EntityMarkerLayer';
 import { DraftLocationMarker } from './map/DraftLocationMarker';
 import { UserLocationLayer } from './map/UserLocationLayer';
+import { GeofenceOverlayLayer } from './map/GeofenceOverlayLayer';
+import { GeofenceDefinition } from '../types/geofence';
 import { MapController } from './map/MapController';
 import { MapToolbar } from './map/MapToolbar';
 import { MapLegend } from './map/MapLegend';
@@ -88,6 +90,10 @@ export interface MapViewProps {
   fitTargetRequest?: { target: FitTarget; timestamp: number } | null;
   onViewDetailsClick?: (entity: AnyMarkerEntity) => void;
   onEditClick?: (entity: AnyMarkerEntity) => void;
+  geofences?: GeofenceDefinition[];
+  selectedGeofenceId?: string | null;
+  onSelectGeofence?: (geofence: GeofenceDefinition) => void;
+  onViewGeofenceEvents?: (geofence: GeofenceDefinition) => void;
   tileUrl?: string;
   tileAttribution?: string;
   maxZoom?: number;
@@ -111,6 +117,10 @@ export function MapView({
   fitTargetRequest,
   onViewDetailsClick,
   onEditClick,
+  geofences = [],
+  selectedGeofenceId,
+  onSelectGeofence,
+  onViewGeofenceEvents,
   tileUrl: propTileUrl,
   tileAttribution: propTileAttribution,
   maxZoom: propMaxZoom,
@@ -301,6 +311,14 @@ export function MapView({
 
         {/* Draft/Placement marker for Create or Update flow (Outside cluster) */}
         <DraftLocationMarker draftLocation={draftLocation} onDraftDragEnd={onDraftDragEnd} />
+
+        {/* Authoritative Geofence Spatial Overlay Layer (Circles & Polygons) */}
+        <GeofenceOverlayLayer
+          geofences={geofences}
+          selectedGeofenceId={selectedGeofenceId}
+          onSelectGeofence={onSelectGeofence}
+          onViewEvents={onViewGeofenceEvents}
+        />
       </MapContainer>
     </div>
   );

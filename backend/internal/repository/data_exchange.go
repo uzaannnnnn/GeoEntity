@@ -394,6 +394,10 @@ func (r *SQLite) CreateImportedEntities(ctx context.Context, format, batchID str
 			return 0, 0, ErrImportConflict
 		}
 	}
+	enabledGeofences, err := loadEnabledGeofencesTx(ctx, tx)
+	if err != nil {
+		return 0, 0, err
+	}
 	createdTags, createdCategories := 0, 0
 	for _, record := range records {
 		if err := validateImportMetadataTx(ctx, tx, record); err != nil {
@@ -468,6 +472,9 @@ func (r *SQLite) CreateImportedEntities(ctx context.Context, format, batchID str
 		}
 		payload := map[string]any{"changes": map[string]any{"source": "import", "format": format, "batch_id": batchID, "entity": activityEntity(item)}}
 		if err := insertActivity(ctx, tx, item.ID, "entity.created", payload); err != nil {
+			return 0, 0, err
+		}
+		if err := establishEntityMembershipsTx(ctx, tx, item, enabledGeofences, item.CreatedAt); err != nil {
 			return 0, 0, err
 		}
 	}
