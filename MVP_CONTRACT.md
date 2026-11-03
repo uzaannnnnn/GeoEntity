@@ -6,7 +6,7 @@ This document converts `MASTER_PROMPT.md` into the implementation contract for t
 
 ## Repository baseline and assumptions
 
-- The project root is `[LOCAL_PATH_REDACTED] Git was initialized there during PHASE 1; the application is organized into `backend/` and `frontend/` directories.
+- The project root is `[LOCAL_PATH_REDACTED]` Git was initialized there during PHASE 1; the application is organized into `backend/` and `frontend/` directories.
 - A sibling directory named `cv-builder` is a separate Next.js project and is not part of this repository.
 - The MVP scope and API rules below derive from `MASTER_PROMPT.md`. The implementation and verification record is maintained in `HANDOFF.md` and `README.md`.
 

@@ -1,4 +1,7 @@
 # MASTER PROJECT INSTRUCTION
+
+> **Historical instruction:** this prompt describes the original take-home assignment and PHASE 0–5 workflow. It is not the current product status or an authorization to begin another phase. For later milestone status and current work boundaries, see `V2_ROADMAP.md` and the phase-specific V2 handoffs.
+
 ## GeoEntity Management System — Software Developer Take-Home Test
 
 ## 1. PROJECT CONTEXT

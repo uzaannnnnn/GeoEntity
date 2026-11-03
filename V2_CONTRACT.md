@@ -1,5 +1,7 @@
 # GeoEntity V2 — Product and API Contract Proposal
 
+> **Historical proposal:** this document records the V2 contract as proposed at the time. Several proposed features were subsequently implemented under later milestones. For current routes and behavior, see `README.md`, the backend handlers, and `V2_ROADMAP.md`; unimplemented proposals below are not current commitments.
+
 **Status:** V2 product contract proposal for future feature sprints. Existing `/api` behavior and the V2.1A migration baseline are implemented compatibility constraints; the proposed V2 feature APIs still require sprint authorization.
 
 ## 1. Contract principles
@@ -124,7 +126,7 @@ Avoid unnecessary columns on `entities` and avoid changing its existing CHECK co
 - The runner rejects sequence gaps, unknown migration files, unknown/unexpected un-ledgered schema objects, malformed ledger schema, missing ledger versions, filename mismatches, and checksum mismatches.
 - Legacy V1 baseline recognition checks the exact `entities` SQL definition (including CHECK constraints), ordered column metadata, and the required `idx_entities_created_at` definition. Valid V1 databases are baselined without rewriting rows. Empty databases execute migration 001 through the same migration path.
 - Temporary database tests cover empty initialization, a synthetic two-row V1 fixture, baseline registration and row preservation, rerun/reopen, checksum mismatch, unknown schema, missing index/constraint, failed migration rollback, and ledger consistency. Existing handler tests cover V1 health and CRUD routes, payloads, response envelopes, validation, status codes, and persistence.
-- The actual local database was backed up before migration with SQLite's backup API to `[LOCAL_PATH_REDACTED] Support/GeoEntity/backups/geoentity-20261102T135501Z.db`. It was independently opened read-only; schema and both records matched. After startup migration, the exact entity rows still match the backup and version 1 is recorded. Backup SHA-256: `c847028ba472bfd29b92b319ec4afadabaf5a6a709d5648d170f1f245c886acf`.
+- The actual local database was backed up before migration with SQLite's backup API to `[LOCAL_PATH_REDACTED]`. It was independently opened read-only; schema and both records matched. After startup migration, the exact entity rows still match the backup and version 1 is recorded. Backup SHA-256: `c847028ba472bfd29b92b319ec4afadabaf5a6a709d5648d170f1f245c886acf`.
 - Restore only while the API is stopped: copy the backup over `backend/data/geoentity.db`, then restart. Do not add the backup or local database to Git.
 
 ## 7. Error, validation, and transaction rules

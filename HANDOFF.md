@@ -53,3 +53,7 @@ Earlier phases also contributed `MASTER_PROMPT.md`, `MVP_CONTRACT.md`, backend f
 ## Next handoff
 
 No further phase is authorized or started. The repository is ready for human review/submission. If the human separately authorizes follow-up work, use the QA/manual instructions in `README.md` and preserve the API contract in `MVP_CONTRACT.md`.
+
+## Historical status clarification — 2026-11-03
+
+This document records the original take-home PHASE 0–5 workflow and is not the current V2 handoff. Subsequent V2.1–V2.8 work and current authorization boundaries are recorded in `V2_ROADMAP.md`, the phase-specific handoffs, and QA reports. Its original PHASE 5 test results and Git statements remain historical evidence for that phase only.

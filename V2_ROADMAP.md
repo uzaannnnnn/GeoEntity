@@ -1,6 +1,6 @@
 # GeoEntity V2 — Product Roadmap
 
-**Status:** V2.1–V2.5 are completed and locally committed. V2.5 is commit `43ce1a7d51950a6cc0ec79692cc3b779b252340b`. V2.6A–D are complete; V2.6 local QA recorded 0 P0, 0 P1, 3 P2, and 1 P3. Production deployment readiness remains subject to operational verification; see `V2.6_FINAL_GIT_REPORT.md`. V2.7A–D are complete from baseline `9d7871e50f6d59befcffe675054e2d5fb373ef5c` (author `Muhamad Fauzan <vanz66hu@gmail.com>`). Original V2.7C QA returned FAIL; findings were remediated and the responsive discrepancy passed independent re-verification. The original FAIL and prior conflicting screenshot evidence remain historical. V2.7D was finalized in one local commit. V2.8A integration/QA is complete with browser verification explicitly excluded because browser automation was unavailable; V2.8B has not started.
+**Historical status at V2.8A QA close:** V2.1–V2.5 were locally committed; V2.6A–D and V2.7A–D were recorded complete; V2.8A automated integration QA passed with browser verification excluded. At that point V2.8B had not started. The V2.7C original FAIL and remediation history remain preserved. Current V2.8C/V2.8D status is recorded in the dated closure section below.
 
 ## Product direction
 
@@ -227,3 +227,11 @@ V2.4 phase ordering and authorization boundaries are specified in `V2.4_IMPLEMEN
 - [x] QA found no new P0/P1/P2 defect in the automated and source-review scope. Known single-process SQLite/rate-limit, indefinite-retention, bundle-size, and untested scale/recovery limits are recorded in `V2.8A_QA_REPORT.md`.
 - [x] Only `V2.8A_QA_REPORT.md`, `V2.8_HANDOFF.md`, and this roadmap were changed. No source, tests, dependency, migration, database, or runtime configuration was modified; nothing was staged or committed.
 - [x] Persistent `backend/data/geoentity.db` and `[LOCAL_PATH_REDACTED]` were not accessed. No push, tag, release, deployment, or V2.8B work occurred.
+
+## V2.8C UI Remediation and V2.8D Documentation — 2026-11-03
+
+- V2.8C frontend UI changes are present in the current working tree, including Geofence modal consistency, authentication presentation/feedback, map resize handling, and responsive map controls. These changes do not alter backend APIs or database schema.
+- The map Location Picker banner is laid out to the right of the Leaflet zoom controls. At widths above 900px it shares the top row with the toolbar; at 900px and below it moves to a second row in the column right of zoom. At mobile width it remains in that right-hand column. The banner has `pointer-events: none`; map pointer input remains available.
+- Frontend automated verification in this worktree passed: 36 Vitest files / 199 tests; `npm run build` passed with the existing Vite advisory for a minified bundle over 500 kB. `git diff --check` passed. Browser screenshots and interaction evidence for this V2.8C work were not available, so viewport rendering is unverified.
+- V2.8D updates current developer guidance, clarifies historical proposal status, and records a Markdown inventory/consistency audit in `V2.8D_DOCUMENTATION_AUDIT.md`. It does not authorize further implementation or publication work.
+- **Current gate:** V2.8C browser QA, V2.8B publication, staging/commit, push, tag, release, and deployment remain separate and are not completed by these documentation changes.

@@ -16,7 +16,7 @@ V2.1A–V2.1D implementation, integration, and independent QA are complete. V2.1
 
 Before V1 baseline registration, a consistent SQLite backup was created outside Git and independently opened read-only:
 
-`[LOCAL_PATH_REDACTED] Support/GeoEntity/backups/geoentity-20261102T135501Z.db`
+`[LOCAL_PATH_REDACTED]`
 
 The backup schema and both existing records matched the source. SHA-256: `c847028ba472bfd29b92b319ec4afadabaf5a6a709d5648d170f1f245c886acf`. After migration, exact entity row values still matched the backup, and the ledger recorded migration 001. During V2.1C the persistent database was inspected read-only; it still contained two records and the V1 ledger. The backup and live DB are excluded from Git and were not included in staging. Restore only while the API is stopped: copy the backup over `backend/data/geoentity.db`, then restart.
 
@@ -62,3 +62,7 @@ No SQLite database, backup, `node_modules`, build output, local `.env`, or origi
 - The API remains unauthenticated and should stay local/trusted-network only.
 - V2.1 closure commit message: `feat: establish GeoEntity V2.1 foundation`.
 - **Next product phase: V2.2 Map Intelligence.** Start only after V2.1 Git closure and explicit human authorization. Do not begin it automatically.
+
+## Historical instructions clarification — 2026-11-03
+
+This V2.1 handoff contains a historical restore procedure that describes copying a backup over a database file. Treat that passage as historical evidence only; it is not current operational guidance and must not be executed without a separate, explicitly authorized recovery task. Current safety and operator constraints are in `README.md` and `AGENT.md`.

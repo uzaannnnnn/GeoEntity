@@ -1,11 +1,13 @@
 # GeoEntity V2 — Architecture and Evolution
 
+> **Historical architecture plan:** sections below preserve the V2.0/V2.1 baseline and proposed target architecture. The security warning and “existing architecture” diagram reflect that earlier baseline, not the current application. Current auth, device, geofence, and monitoring behavior is summarized in `README.md`; verify details in source before relying on this proposal.
+
 **Document status:** V2.0 architecture baseline with V2.1 implementation notes; future product architecture remains a proposal until its sprint is authorized.
 
 ## Workspace boundary and baseline
 
 - V2 planning workspace: `./`.
-- Original take-home repository: `[LOCAL_PATH_REDACTED] It was not modified.
+- Original take-home repository: `[LOCAL_PATH_REDACTED]` It was not modified.
 - The two directories have separate `.git` directories but currently share base commit `acfa9a6b235738563a778e29c28f1feb793e4c6a`.
 - V2 repository branch: `master`; tracked status clean at audit; no remote configured.
 - The ignored local SQLite database has two entity rows, a V1 baseline in `schema_migrations`, and `PRAGMA user_version = 0`. It was backed up and verified before the V2.1A baseline registration; both rows were preserved.
@@ -55,7 +57,7 @@ The actual local V1 database was upgraded after a verified external backup. Its 
 5. Keep tests isolated in temporary databases; test empty, exact V1, populated V1, checksum mismatch, rollback, reruns, and reopen before touching the local DB.
 6. Keep migrations transactional and short. Import parsing/validation, geometry calculations over bulk datasets, and telemetry batch normalization happen before acquiring the SQLite write transaction.
 
-The V2.1A backup is `[LOCAL_PATH_REDACTED] Support/GeoEntity/backups/geoentity-20261102T135501Z.db` (verified read-only; two records and schema match; SHA-256 `c847028ba472bfd29b92b319ec4afadabaf5a6a709d5648d170f1f245c886acf`). To restore, stop the API, copy the backup over `backend/data/geoentity.db`, then restart the API. Never restore while the database is open; keep the backup outside Git.
+The V2.1A backup is `[LOCAL_PATH_REDACTED]` (verified read-only; two records and schema match; SHA-256 `c847028ba472bfd29b92b319ec4afadabaf5a6a709d5648d170f1f245c886acf`). To restore, stop the API, copy the backup over `backend/data/geoentity.db`, then restart the API. Never restore while the database is open; keep the backup outside Git.
 
 Do not commit the existing `.db` file. Use a scrubbed SQL fixture or deterministic seed in tests.
 
@@ -221,5 +223,9 @@ In V2.1B, frontend map provider compliance was implemented and verified:
 - SQLite serialized connection and full-list reads will not support unbounded telemetry/list growth.
 - Geofence false positives/negatives can produce safety-impacting alerts; semantics and geometry tests are mandatory.
 - Activity/history/telemetry tables grow without retention and indexes.
-- Authentication is absent; external access is not safe.
+- At this historical V2.0 baseline, authentication was absent; later V2.6 work added administrator sessions and related protections.
 - OSM standard tile availability and URL-policy constraints are separate from OSM data licensing; a basemap's data license does not grant unrestricted tile-service usage.
+
+## Current-state correction — 2026-11-03
+
+The V2.0/V2.1 architecture diagram and baseline descriptions above are historical, not current. The current code has administrator authentication and session/CSRF/Origin middleware, bounded process-local limits, and a separate device credential on the exact telemetry ingest route. This does not claim the service has been deployed or production-hardened. See `AGENT.md`, `README.md`, and `V2.6_SECURITY_OPERATIONS.md` for current constraints. Later implementation records supersede earlier proposals where they differ.
