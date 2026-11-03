@@ -4,6 +4,9 @@ go 1.27.3
 
 require (
 	github.com/google/uuid v1.6.0
+	golang.org/x/crypto v0.48.0
+	golang.org/x/term v0.40.0
+	golang.org/x/text v0.34.0
 	modernc.org/sqlite v1.61.1
 )
 

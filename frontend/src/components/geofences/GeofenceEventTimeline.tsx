@@ -118,7 +118,7 @@ export function GeofenceEventTimeline({ geofence, onSelectEntity }: GeofenceEven
       </div>
 
       {/* Filter Toolbar */}
-      <form className="event-filter-toolbar" onSubmit={handleApplyFilters}>
+      <form className="timeline-filters-bar" onSubmit={handleApplyFilters}>
         <div className="filter-inputs-grid">
           <div className="form-group-sm">
             <label htmlFor="filter-entity-id" className="form-label-sm">

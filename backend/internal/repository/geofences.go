@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"geoentity/backend/internal/auth"
 	"geoentity/backend/internal/geofence"
 
 	"github.com/google/uuid"
@@ -196,6 +197,9 @@ func (r *SQLite) CreateGeofence(ctx context.Context, item geofence.Definition) e
 	if err := establishGeofenceMembershipsTx(ctx, tx, item, item.CreatedAt); err != nil {
 		return err
 	}
+	if err := auth.AuditTx(ctx, tx, "geofence.created", "geofence", item.ID, auth.RequestID(ctx), map[string]any{"geometry_type": item.Geometry.Type, "enabled": item.Enabled}); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -255,6 +259,9 @@ func (r *SQLite) UpdateGeofence(ctx context.Context, item geofence.Definition) e
 	} else if err := markGeofenceMembershipsInactiveTx(ctx, tx, item.ID); err != nil {
 		return err
 	}
+	if err := auth.AuditTx(ctx, tx, "geofence.updated", "geofence", item.ID, auth.RequestID(ctx), map[string]any{"geometry_type": item.Geometry.Type, "enabled": item.Enabled}); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -285,6 +292,9 @@ func (r *SQLite) DeleteGeofence(ctx context.Context, id string) error {
 	}
 	if changed == 0 {
 		return ErrGeofenceNotFound
+	}
+	if err := auth.AuditTx(ctx, tx, "geofence.deleted", "geofence", id, auth.RequestID(ctx), map[string]any{}); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

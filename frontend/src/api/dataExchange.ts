@@ -1,4 +1,4 @@
-import { API_BASE_URL, ApiError } from './client';
+import { API_BASE_URL, ApiError, getCSRFToken, notifyAuthenticationRequired } from './client';
 import {
   ImportFormat,
   ImportIdMode,
@@ -96,6 +96,7 @@ export const dataExchangeApi = {
         Accept: format === 'csv' ? 'text/csv' : 'application/geo+json',
       },
     });
+    if (response.status === 401) notifyAuthenticationRequired();
 
     if (!response.ok) {
       const contentType = response.headers.get('content-type') || '';
@@ -146,9 +147,11 @@ export const dataExchangeApi = {
       headers: {
         'Content-Type': contentType,
         Accept: 'application/json',
+        ...(getCSRFToken() ? { 'X-CSRF-Token': getCSRFToken() as string } : {}),
       },
       body: file,
     });
+    if (response.status === 401) notifyAuthenticationRequired();
 
     const isJson = (response.headers.get('content-type') || '').includes('application/json');
 
@@ -205,10 +208,12 @@ export const dataExchangeApi = {
       headers: {
         'Content-Type': contentType,
         'X-Preview-SHA256': previewSha256,
+        ...(getCSRFToken() ? { 'X-CSRF-Token': getCSRFToken() as string } : {}),
         Accept: 'application/json',
       },
       body: file,
     });
+    if (response.status === 401) notifyAuthenticationRequired();
 
     const isJson = (response.headers.get('content-type') || '').includes('application/json');
 

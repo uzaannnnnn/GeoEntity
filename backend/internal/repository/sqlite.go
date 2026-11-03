@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"geoentity/backend/internal/auth"
 	"geoentity/backend/internal/entity"
 
 	_ "modernc.org/sqlite"
@@ -57,9 +58,46 @@ func Open(ctx context.Context, dsn string) (*SQLite, error) {
 }
 
 func (r *SQLite) Close() error { return r.db.Close() }
+func (r *SQLite) DB() *sql.DB  { return r.db }
 
 func Migrate(ctx context.Context, db *sql.DB) error {
 	return MigrateFS(ctx, db, migrations)
+}
+
+// VerifyMigrationLedger validates the applied migration names and checksums without applying migrations.
+func VerifyMigrationLedger(ctx context.Context, db *sql.DB) (int, error) {
+	items, err := loadMigrations(migrations)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := db.QueryContext(ctx, `SELECT version,name,checksum FROM schema_migrations ORDER BY version`)
+	if err != nil {
+		return 0, fmt.Errorf("read migration ledger: %w", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var version int
+		var name, checksum string
+		if err := rows.Scan(&version, &name, &checksum); err != nil {
+			return 0, err
+		}
+		if version != count+1 || version > len(items) {
+			return 0, fmt.Errorf("migration ledger sequence invalid at version %d", version)
+		}
+		item := items[version-1]
+		if item.name != name || item.checksum != checksum {
+			return 0, fmt.Errorf("migration ledger mismatch at version %d", version)
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if count != len(items) {
+		return count, fmt.Errorf("migration ledger is incomplete: found %d expected %d", count, len(items))
+	}
+	return count, nil
 }
 
 type migration struct {
@@ -366,6 +404,9 @@ func (r *SQLite) Create(ctx context.Context, item entity.Entity) error {
 	if err := establishEntityMembershipsTx(ctx, tx, item, definitions, item.CreatedAt); err != nil {
 		return err
 	}
+	if err := auth.AuditTx(ctx, tx, "entity.created", "entity", item.ID, auth.RequestID(ctx), map[string]any{"type": item.Type}); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -393,6 +434,9 @@ func (r *SQLite) Update(ctx context.Context, item entity.Entity) error {
 		return err
 	}
 	if err = insertActivity(ctx, tx, item.ID, "entity.updated", map[string]any{"before": activityEntity(previous), "after": activityEntity(item)}); err != nil {
+		return err
+	}
+	if err = auth.AuditTx(ctx, tx, "entity.updated", "entity", item.ID, auth.RequestID(ctx), map[string]any{"type": item.Type}); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -458,6 +502,9 @@ func (r *SQLite) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM entities WHERE id=?`, id); err != nil {
+		return err
+	}
+	if err = auth.AuditTx(ctx, tx, "entity.deleted", "entity", id, auth.RequestID(ctx), map[string]any{"type": item.Type}); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -38,6 +39,10 @@ type API struct {
 	logger *slog.Logger
 }
 
+type adminAuditStore interface {
+	ListAdminAudit(context.Context, int, string, string) ([]repository.AdminAuditEvent, error)
+}
+
 func New(store Store, logger *slog.Logger) *API {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -53,6 +58,10 @@ type errorBody struct {
 }
 
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/admin/audit" {
+		a.adminAudit(w, r)
+		return
+	}
 	if r.URL.Path == "/api/geofences" || strings.HasPrefix(r.URL.Path, "/api/geofences/") {
 		a.geofences(w, r)
 		return
@@ -131,6 +140,64 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "Endpoint not found", "")
+}
+
+func (a *API) adminAudit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	store, ok := a.store.(adminAuditStore)
+	if !ok {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Endpoint not found", "")
+		return
+	}
+	values := r.URL.Query()
+	for key, all := range values {
+		if key != "limit" && key != "cursor" || len(all) != 1 {
+			writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid audit query parameters", "")
+			return
+		}
+	}
+	limit := 50
+	if raw := values.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid audit query parameters", "limit")
+			return
+		}
+		limit = n
+	}
+	beforeTime, beforeID := "", ""
+	if cursor := values.Get("cursor"); cursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid audit query parameters", "cursor")
+			return
+		}
+		parts := strings.SplitN(string(decoded), "\x00", 2)
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid audit query parameters", "cursor")
+			return
+		}
+		if _, err = time.Parse(time.RFC3339Nano, parts[0]); err != nil || parts[1] == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid audit query parameters", "cursor")
+			return
+		}
+		beforeTime, beforeID = parts[0], parts[1]
+	}
+	items, err := store.ListAdminAudit(r.Context(), limit+1, beforeTime, beforeID)
+	if err != nil {
+		a.internalError(w, err)
+		return
+	}
+	next := ""
+	if len(items) > limit {
+		last := items[limit-1]
+		next = base64.RawURLEncoding.EncodeToString([]byte(last.OccurredAt + "\x00" + last.ID))
+		items = items[:limit]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": items, "next_cursor": next})
 }
 
 func (a *API) queryEntities(w http.ResponseWriter, r *http.Request) {

@@ -248,7 +248,7 @@ export function GeofenceForm({
         <div className="geom-type-toggle-group" role="radiogroup" aria-label="Geometry Type">
           <button
             type="button"
-            className={`btn-toggle-option ${geomType === 'Circle' ? 'active' : ''}`}
+            className={`geom-toggle-btn ${geomType === 'Circle' ? 'active' : ''}`}
             onClick={() => setGeomType('Circle')}
             role="radio"
             aria-checked={geomType === 'Circle'}
@@ -258,7 +258,7 @@ export function GeofenceForm({
           </button>
           <button
             type="button"
-            className={`btn-toggle-option ${geomType === 'Polygon' ? 'active' : ''}`}
+            className={`geom-toggle-btn ${geomType === 'Polygon' ? 'active' : ''}`}
             onClick={() => setGeomType('Polygon')}
             role="radio"
             aria-checked={geomType === 'Polygon'}

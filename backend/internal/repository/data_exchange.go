@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"geoentity/backend/internal/auth"
 	"geoentity/backend/internal/entity"
 
 	"github.com/google/uuid"
@@ -477,6 +478,9 @@ func (r *SQLite) CreateImportedEntities(ctx context.Context, format, batchID str
 		if err := establishEntityMembershipsTx(ctx, tx, item, enabledGeofences, item.CreatedAt); err != nil {
 			return 0, 0, err
 		}
+	}
+	if err := auth.AuditTx(ctx, tx, "entities.imported", "import_batch", batchID, auth.RequestID(ctx), map[string]any{"format": format, "entity_count": len(records), "tags_created": createdTags, "categories_created": createdCategories}); err != nil {
+		return 0, 0, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, 0, err

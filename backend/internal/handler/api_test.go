@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"geoentity/backend/internal/auth"
 	"geoentity/backend/internal/entity"
 	"geoentity/backend/internal/repository"
 	_ "modernc.org/sqlite"
@@ -35,6 +37,42 @@ func newTestAPI(t *testing.T) (*API, *repository.SQLite, string) {
 		}
 	})
 	return New(store, slog.New(slog.NewTextHandler(io.Discard, nil))), store, dbPath
+}
+
+func TestAdminAuditPaginationAndInputValidation(t *testing.T) {
+	api, store, _ := newTestAPI(t)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{ID: "1", Label: "administrator"})
+	at := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 3; i++ {
+		item := entity.Entity{ID: fmt.Sprintf("00000000-0000-4000-8000-%012d", i+101), Name: fmt.Sprintf("Audit %d", i), Type: "facility", Status: "active", CreatedAt: at.Add(time.Duration(i) * time.Second), UpdatedAt: at.Add(time.Duration(i) * time.Second)}
+		if err := store.Create(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := request(api, http.MethodGet, "/api/admin/audit?limit=2", "")
+	if first.Code != http.StatusOK {
+		t.Fatalf("audit first page %d %s", first.Code, first.Body.String())
+	}
+	var page struct {
+		Data []repository.AdminAuditEvent `json:"data"`
+		Next string                       `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &page); err != nil || len(page.Data) != 2 || page.Next == "" {
+		t.Fatalf("first page=%+v err=%v", page, err)
+	}
+	second := request(api, http.MethodGet, "/api/admin/audit?limit=2&cursor="+url.QueryEscape(page.Next), "")
+	if second.Code != http.StatusOK {
+		t.Fatalf("audit second page %d %s", second.Code, second.Body.String())
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &page); err != nil || len(page.Data) != 1 || page.Next != "" {
+		t.Fatalf("second page=%+v err=%v", page, err)
+	}
+	if got := request(api, http.MethodGet, "/api/admin/audit?unexpected=1", "").Code; got != http.StatusBadRequest {
+		t.Fatalf("unexpected query status=%d", got)
+	}
+	if got := request(api, http.MethodPost, "/api/admin/audit", "").Code; got != http.StatusMethodNotAllowed {
+		t.Fatalf("audit write status=%d", got)
+	}
 }
 
 func request(api http.Handler, method, path, body string) *httptest.ResponseRecorder {

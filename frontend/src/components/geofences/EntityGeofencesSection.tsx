@@ -80,7 +80,7 @@ export function EntityGeofencesSection({
       </div>
 
       {/* Semantic notice */}
-      <div className="membership-info-card">
+      <div className="semantic-notice-box">
         <InfoIcon size={16} className="text-muted" />
         <span className="info-text">
           Containment is derived from persisted entity coordinates (

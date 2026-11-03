@@ -712,13 +712,13 @@ func TestGeofenceMigrationUpgradesPopulatedV1AndRerunsSafely(t *testing.T) {
 	if got := entitySnapshot(t, db); len(got) != len(before) || got[0] != before[0] || got[1] != before[1] {
 		t.Fatalf("entity rows changed: before=%v after=%v", before, got)
 	}
-	if got := ledgerVersions(t, db); len(got) != 5 || got[3] != 4 || got[4] != 5 {
+	if got := ledgerVersions(t, db); len(got) != 6 || got[3] != 4 || got[4] != 5 || got[5] != 6 {
 		t.Fatalf("migration ledger=%v", got)
 	}
 	if err := Migrate(context.Background(), db); err != nil {
 		t.Fatalf("rerun migration: %v", err)
 	}
-	if got := ledgerVersions(t, db); len(got) != 5 {
+	if got := ledgerVersions(t, db); len(got) != 6 {
 		t.Fatalf("migration rerun changed ledger=%v", got)
 	}
 	var count int

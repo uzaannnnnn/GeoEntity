@@ -4343,3 +4343,30 @@
     padding: 14px;
   }
 }
+/* V2.6 administrator sign-in and session controls */
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f4f6f8;
+}
+.auth-card {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 14px;
+  padding: 32px;
+  border: 1px solid #d8dee6;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 36px rgb(20 35 55 / 10%);
+}
+.auth-card h1, .auth-card p { margin: 0; }
+.auth-card label { font-weight: 600; }
+.auth-card input { min-height: 42px; padding: 8px 10px; border: 1px solid #b9c3d0; border-radius: 7px; }
+.auth-card button, .auth-signout { min-height: 40px; padding: 8px 16px; border: 0; border-radius: 7px; background: #175cd3; color: white; font-weight: 600; cursor: pointer; }
+.auth-card button:disabled { opacity: .6; cursor: wait; }
+.auth-error { color: #b42318; }
+.auth-session-controls { position: fixed; top: 12px; right: 16px; z-index: 1200; display: flex; align-items: center; gap: 10px; }
+.auth-session-controls [role="alert"] { color: #b42318; background: #fff; padding: 6px 8px; border-radius: 5px; }
+.auth-signout { position: static; min-height: 34px; padding: 6px 12px; }

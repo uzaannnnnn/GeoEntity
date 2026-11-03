@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, FormEvent } from 'react';
 import {
   Entity,
   EntityInput,
@@ -27,8 +27,9 @@ import { AnyMarkerEntity } from './components/map/EntityMarkerLayer';
 import { geofencesApi } from './api/geofences';
 import { GeofenceDefinition } from './types/geofence';
 import { GeofenceManagerModal, GeofenceModalTab } from './components/geofences/GeofenceManagerModal';
+import { authApi } from './api/auth';
 
-export function App() {
+function AuthenticatedApp() {
   // 1. Paginated Entity List Data Source
   const [entities, setEntities] = useState<Entity[]>([]);
   const [entityMeta, setEntityMeta] = useState<EntityPageMeta | null>(null);
@@ -792,4 +793,47 @@ export function App() {
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
+}
+
+export function App() {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [signOutError, setSignOutError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    authApi.session().then((state) => { if (mounted) setAuthenticated(state.authenticated); }).catch(() => { if (mounted) setAuthenticated(false); });
+    const onExpired = () => { setAuthenticated(false); setError('Your session expired. Sign in again.'); };
+    window.addEventListener('geoentity:auth-required', onExpired);
+    return () => { mounted = false; window.removeEventListener('geoentity:auth-required', onExpired); };
+  }, []);
+
+  async function signIn(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError('');
+    try { await authApi.login(password); setPassword(''); setAuthenticated(true); }
+    catch { setError('Sign in failed. Check the passphrase and try again.'); }
+    finally { setBusy(false); }
+  }
+
+  async function signOut() {
+    setSignOutError('');
+    try { await authApi.logout(); setAuthenticated(false); }
+    catch { setSignOutError('Sign out failed. Please try again.'); }
+  }
+
+  if (authenticated === null) return <main className="auth-screen"><p>Checking session…</p></main>;
+  if (!authenticated) return (
+    <main className="auth-screen">
+      <form className="auth-card" onSubmit={signIn}>
+        <h1>GeoEntity</h1><p>Sign in to manage your data.</p>
+        <label htmlFor="admin-passphrase">Administrator passphrase</label>
+        <input id="admin-passphrase" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+        {error && <p className="auth-error" role="alert">{error}</p>}
+        <button type="submit" disabled={busy || password.length === 0}>{busy ? 'Signing in…' : 'Sign in'}</button>
+      </form>
+    </main>
+  );
+  return <><div className="auth-session-controls">{signOutError && <span role="alert">{signOutError}</span>}<button className="auth-signout" onClick={signOut}>Sign out</button></div><AuthenticatedApp /></>;
 }

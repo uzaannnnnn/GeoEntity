@@ -76,7 +76,7 @@ func TestMigration005UpgradesPopulatedV25BAndPreservesEarlierChecksums(t *testin
 	if err := db.QueryRow(`SELECT count(*) FROM geofences WHERE id=?`, geofenceID).Scan(&definitions); err != nil || definitions != 1 {
 		t.Fatalf("existing geofence count=%d err=%v", definitions, err)
 	}
-	if got := ledgerVersions(t, db); fmt.Sprint(got) != "[1 2 3 4 5]" {
+	if got := ledgerVersions(t, db); fmt.Sprint(got) != "[1 2 3 4 5 6]" {
 		t.Fatalf("migration ledger=%v", got)
 	}
 	rows, err = db.Query(`SELECT checksum FROM schema_migrations WHERE version<=4 ORDER BY version`)
@@ -106,17 +106,17 @@ func TestMigration005UpgradesPopulatedV25BAndPreservesEarlierChecksums(t *testin
 	if err := Migrate(ctx, db); err != nil {
 		t.Fatalf("migration rerun: %v", err)
 	}
-	if got := ledgerVersions(t, db); fmt.Sprint(got) != "[1 2 3 4 5]" {
+	if got := ledgerVersions(t, db); fmt.Sprint(got) != "[1 2 3 4 5 6]" {
 		t.Fatalf("rerun ledger=%v", got)
 	}
 }
 
-func TestFreshDatabaseAppliesMigrations001Through005(t *testing.T) {
+func TestFreshDatabaseAppliesMigrations001Through006(t *testing.T) {
 	db := newMigrationDB(t)
 	if err := Migrate(context.Background(), db); err != nil {
 		t.Fatal(err)
 	}
-	if got := ledgerVersions(t, db); fmt.Sprint(got) != "[1 2 3 4 5]" {
+	if got := ledgerVersions(t, db); fmt.Sprint(got) != "[1 2 3 4 5 6]" {
 		t.Fatalf("fresh migration ledger=%v", got)
 	}
 	for _, name := range []string{"geofences", "entity_geofence_memberships", "geofence_events"} {

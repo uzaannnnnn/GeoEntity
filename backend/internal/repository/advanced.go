@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"geoentity/backend/internal/auth"
 	"geoentity/backend/internal/entity"
 	"github.com/google/uuid"
 )
@@ -78,6 +79,41 @@ type CatalogItem struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
+
+type AdminAuditEvent struct {
+	ID           string          `json:"id"`
+	OccurredAt   string          `json:"occurred_at"`
+	ActorID      string          `json:"actor_id"`
+	ActorLabel   string          `json:"actor_label"`
+	Action       string          `json:"action"`
+	ResourceType string          `json:"resource_type"`
+	ResourceID   string          `json:"resource_id"`
+	RequestID    string          `json:"request_id"`
+	Details      json.RawMessage `json:"details"`
+}
+
+func (r *SQLite) ListAdminAudit(ctx context.Context, limit int, beforeTime, beforeID string) ([]AdminAuditEvent, error) {
+	if limit < 1 || limit > 101 {
+		return nil, errors.New("audit page limit must be between 1 and 101")
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT id,occurred_at,actor_id,actor_label,action,resource_type,resource_id,request_id,details FROM admin_audit_events WHERE (?='' OR occurred_at<? OR (occurred_at=? AND id<?)) ORDER BY occurred_at DESC,id DESC LIMIT ?`, beforeTime, beforeTime, beforeTime, beforeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]AdminAuditEvent, 0, limit)
+	for rows.Next() {
+		var e AdminAuditEvent
+		var details string
+		if err = rows.Scan(&e.ID, &e.OccurredAt, &e.ActorID, &e.ActorLabel, &e.Action, &e.ResourceType, &e.ResourceID, &e.RequestID, &details); err != nil {
+			return nil, err
+		}
+		e.Details = json.RawMessage(details)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 type Activity struct {
 	ID         string    `json:"id"`
 	EntityID   string    `json:"entity_id"`
@@ -214,6 +250,13 @@ func (r *SQLite) SaveDefinition(ctx context.Context, d Definition, create bool) 
 		_, e = tx.ExecContext(ctx, `UPDATE attribute_definitions SET label=?,required=?,min_number=?,max_number=?,max_length=?,archived=?,updated_at=? WHERE id=?`, d.Label, boolInt(d.Required), d.MinNumber, d.MaxNumber, d.MaxLength, boolInt(d.Archived), now, d.ID)
 	}
 	if e != nil {
+		return e
+	}
+	action := "attribute_definition.updated"
+	if create {
+		action = "attribute_definition.created"
+	}
+	if e = auth.AuditTx(ctx, tx, action, "attribute_definition", d.ID, auth.RequestID(ctx), map[string]any{"entity_type": d.EntityType}); e != nil {
 		return e
 	}
 	return tx.Commit()
@@ -402,6 +445,9 @@ func (r *SQLite) ReplaceAttributes(ctx context.Context, id string, values map[st
 	if e = insertActivity(ctx, tx, id, "entity.attributes.updated", map[string]any{"before": activityAttributeValues(before), "after": activityAttributeValues(values)}); e != nil {
 		return e
 	}
+	if e = auth.AuditTx(ctx, tx, "entity.attributes.updated", "entity", id, auth.RequestID(ctx), map[string]any{"attribute_count": len(values)}); e != nil {
+		return e
+	}
 	return tx.Commit()
 }
 
@@ -446,12 +492,28 @@ func (r *SQLite) CreateCatalog(ctx context.Context, kind, name string) (CatalogI
 		return CatalogItem{}, e
 	}
 	item := CatalogItem{ID: uuid.NewString(), Name: display}
-	_, e = r.db.ExecContext(ctx, `INSERT INTO `+table+`(id,name,normalized_name,created_at) VALUES(?,?,?,?)`, item.ID, item.Name, norm, time.Now().UTC().Format(time.RFC3339Nano))
+	tx, e := r.db.BeginTx(ctx, nil)
+	if e != nil {
+		return CatalogItem{}, e
+	}
+	defer tx.Rollback()
+	_, e = tx.ExecContext(ctx, `INSERT INTO `+table+`(id,name,normalized_name,created_at) VALUES(?,?,?,?)`, item.ID, item.Name, norm, time.Now().UTC().Format(time.RFC3339Nano))
+	if e == nil {
+		e = auth.AuditTx(ctx, tx, table+".created", table, item.ID, auth.RequestID(ctx), map[string]any{})
+	}
+	if e == nil {
+		e = tx.Commit()
+	}
 	return item, e
 }
 func (r *SQLite) DeleteCatalog(ctx context.Context, kind, id string) error {
 	table := catalogTable(kind)
-	res, e := r.db.ExecContext(ctx, `DELETE FROM `+table+` WHERE id=?`, id)
+	tx, e := r.db.BeginTx(ctx, nil)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback()
+	res, e := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE id=?`, id)
 	if e != nil {
 		return e
 	}
@@ -459,7 +521,13 @@ func (r *SQLite) DeleteCatalog(ctx context.Context, kind, id string) error {
 	if e == nil && n == 0 {
 		return ErrNotFound
 	}
-	return e
+	if e != nil {
+		return e
+	}
+	if e = auth.AuditTx(ctx, tx, table+".deleted", table, id, auth.RequestID(ctx), map[string]any{}); e != nil {
+		return e
+	}
+	return tx.Commit()
 }
 func (r *SQLite) EntityCatalog(ctx context.Context, id, kind string) ([]CatalogItem, error) {
 	if _, e := r.Get(ctx, id); e != nil {
@@ -574,6 +642,9 @@ func (r *SQLite) ReplaceCatalog(ctx context.Context, id, kind string, ids []stri
 		items = append(items, x)
 	}
 	if e = insertActivity(ctx, tx, id, event, map[string]any{"before": beforeItems, "after": items}); e != nil {
+		return e
+	}
+	if e = auth.AuditTx(ctx, tx, event, "entity", id, auth.RequestID(ctx), map[string]any{"assignment_count": len(items)}); e != nil {
 		return e
 	}
 	return tx.Commit()

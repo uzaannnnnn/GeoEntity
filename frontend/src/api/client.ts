@@ -17,6 +17,13 @@ export class ApiError extends Error {
 }
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
+let csrfToken: string | null = null;
+
+export function setCSRFToken(token: string | null) { csrfToken = token; }
+export function getCSRFToken() { return csrfToken; }
+export function notifyAuthenticationRequired() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('geoentity:auth-required'));
+}
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
@@ -67,6 +74,7 @@ export const apiClient = {
         Accept: 'application/json',
       },
     });
+    if (response.status === 401 && !path.startsWith('/auth/')) notifyAuthenticationRequired();
     return handleResponse<T>(response);
   },
 
@@ -76,9 +84,11 @@ export const apiClient = {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
       },
       body: JSON.stringify(body),
     });
+    if (response.status === 401 && !path.startsWith('/auth/')) notifyAuthenticationRequired();
     return handleResponse<T>(response);
   },
 
@@ -88,9 +98,11 @@ export const apiClient = {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
       },
       body: JSON.stringify(body),
     });
+    if (response.status === 401 && !path.startsWith('/auth/')) notifyAuthenticationRequired();
     return handleResponse<T>(response);
   },
 
@@ -99,8 +111,10 @@ export const apiClient = {
       method: 'DELETE',
       headers: {
         Accept: 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
       },
     });
+    if (response.status === 401 && !path.startsWith('/auth/')) notifyAuthenticationRequired();
     return handleResponse<T>(response);
   },
 };

@@ -197,7 +197,7 @@ export function GeofenceManagerModal({
             role="tab"
             aria-selected={activeTab === 'list'}
             id="tab-geofence-list"
-            className={`modal-tab-btn ${activeTab === 'list' ? 'active' : ''}`}
+            className={`geofence-tab-btn ${activeTab === 'list' ? 'active' : ''}`}
             onClick={() => {
               setActiveTab('list');
               setEditingGeofence(null);
@@ -212,7 +212,7 @@ export function GeofenceManagerModal({
             role="tab"
             aria-selected={activeTab === 'events'}
             id="tab-geofence-events"
-            className={`modal-tab-btn ${activeTab === 'events' ? 'active' : ''}`}
+            className={`geofence-tab-btn ${activeTab === 'events' ? 'active' : ''}`}
             onClick={() => setActiveTab('events')}
           >
             <ActivityIcon size={16} />
@@ -227,7 +227,7 @@ export function GeofenceManagerModal({
             role="tab"
             aria-selected={activeTab === 'create' || activeTab === 'edit'}
             id="tab-geofence-form"
-            className={`modal-tab-btn ${activeTab === 'create' || activeTab === 'edit' ? 'active' : ''}`}
+            className={`geofence-tab-btn ${activeTab === 'create' || activeTab === 'edit' ? 'active' : ''}`}
             onClick={() => {
               setActiveTab('create');
               setEditingGeofence(null);
