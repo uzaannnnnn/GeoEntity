@@ -4,17 +4,19 @@ export class ApiError extends Error {
   code: string;
   field?: string;
   status: number;
+  details?: any[];
 
-  constructor(status: number, code: string, message: string, field?: string) {
+  constructor(status: number, code: string, message: string, field?: string, details?: any[]) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.field = field;
+    this.details = details;
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
@@ -33,7 +35,8 @@ async function handleResponse<T>(response: Response): Promise<T> {
             response.status,
             errorJson.error.code || 'API_ERROR',
             errorJson.error.message || 'An unexpected API error occurred',
-            errorJson.error.field
+            errorJson.error.field,
+            errorJson.error.details
           );
         }
       } catch (err) {

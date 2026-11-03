@@ -1,6 +1,6 @@
 # GeoEntity V2 — Product Roadmap
 
-**Status:** V2.1 foundation and V2.2 Map Intelligence are closed. V2.2D QA verdict PASS with zero P0/P1 findings (user-reported). Browser interaction verification remains documented as unavailable in this environment. Next milestone is V2.3 Entity Model and Activity; it requires explicit authorization.
+**Status:** V2.1, V2.2, and V2.3 are completed and locally committed. V2.4A–H are complete in the current uncommitted worktree. Independent QA passed with zero P0/P1/P2; the sole P3 favicon 404 was fixed and verified in development and production. V2.5 Geospatial Intelligence is the next planned phase and has not started. Baseline remains V2.3 commit `7d508dab10bc44ea48cecbc8e47ba9ebad91db1c` on `master`.
 
 ## Product direction
 
@@ -8,19 +8,19 @@ Evolve the current single-user GeoEntity CRUD map into a spatial asset and IoT o
 
 ## Workspace and current system inventory
 
-The active V2 workspace is `./`, a separate Git repository from the original take-home project at `[LOCAL_PATH_REDACTED] The active V2 repository is on branch `master`, based on `acfa9a6b235738563a778e29c28f1feb793e4c6a`. The original take-home directory was not modified.
+The active V2 workspace is `./`, a separate Git repository from the original take-home project at `[LOCAL_PATH_REDACTED] V2.4A verified branch `master`, HEAD `7d508dab10bc44ea48cecbc8e47ba9ebad91db1c`, and a clean starting worktree. The original take-home directory was not modified.
 
 The V2 copy has a local, Git-ignored `backend/data/geoentity.db` with two entity rows, a V1 baseline in `schema_migrations`, and `PRAGMA user_version = 0`. A timestamped backup was independently verified before baseline registration; preserve both data and backup. Neither belongs in Git.
 
 | Area | Implemented now | V2 gap |
 |---|---|---|
-| Map | Leaflet/React Leaflet, configurable official OSM raster URL, attribution, zoom, custom entity markers, marker selection, auto-fit on initial/manual refresh, draft location click/drag; V2.2 adds persisted-marker clustering, Locate Me, Fit All, legend, coordinate inspector/copy, and accessible controls | No basemap switcher; browser-level map interaction and rendering performance remain unverified |
-| Entities | List, simple name/description search, type/status filters, details, create/update/delete, UUIDs, UTC timestamps | No tags/categories/custom attributes, advanced server-side search, bulk import/export, or timeline |
+| Map | Leaflet/React Leaflet, configurable official OSM raster URL, attribution, zoom, custom entity markers, marker selection, auto-fit on initial/manual refresh, draft location click/drag; V2.2 adds persisted-marker clustering, Locate Me, Fit All, legend, coordinate inspector/copy, and accessible controls | No basemap switcher; production rendering performance is not benchmarked |
+| Entities | V1 CRUD/list; V2.3 custom attributes, tags/categories and append-only activity; V2.4B server-side search/cursor pagination; V2.4E frontend CSV/GeoJSON operations with backend preview/commit and export | Legacy V1 list remains unpaginated for compatibility |
 | Geospatial | Latitude/longitude validation and map visualization | No geometry model, geofence membership, spatial event history, or geometry test package |
 | IoT | Generic entity records can represent devices | No telemetry, sensor history, threshold alerts, ingestion, or simulator |
-| Backend | Go `net/http`, `database/sql`, repository abstraction, SQLite, JSON REST CRUD, input validation and error envelopes | No authentication/authorization, pagination, rate limiting, OpenAPI document, or production deployment config |
-| Database | `entities` plus `schema_migrations`; ordered embedded migration runner, SHA-256 checksums, V1 recognition | No feature tables for tags, activity, geofences, or telemetry |
-| Quality | Backend handler/persistence tests; frontend API/validation/formatting/state/navigation and V2.2 map utility tests; TypeScript/Vite build | No browser E2E or mounted Leaflet interaction harness; no import/geofence/telemetry tests yet |
+| Backend | Go `net/http`, `database/sql`, SQLite, V1 JSON CRUD, V2.3 metadata/activity, V2.4B query/map APIs, V2.4D CSV/GeoJSON exchange | No authentication/authorization or rate limiting; V1 full-list endpoint remains for compatibility |
+| Database | `entities`, V2.3 metadata/activity tables, ordered embedded migration runner and SHA-256 ledger; V2.4B migration 003 adds search/query indexes | V2.4D required no additional schema migration; bulk import is transactional over existing tables |
+| Quality | Backend/frontend regression suites, V2.4B/C search/map checks, V2.4F import/export integration, V2.4G independent QA and V2.4H favicon verification | Production-size chunk advisory remains; external deployment requires authentication/security gate |
 
 ### Current implementation quality
 
@@ -28,7 +28,7 @@ The current code is a small, understandable monolith with clear HTTP handler, en
 
 The V2.1 runner now handles persistence evolution: numbered migrations are ordered, checksummed, and recorded transactionally. V1 recognition checks the legacy table, constraints, columns, and index. `PRAGMA user_version` intentionally remains zero; `schema_migrations` is authoritative.
 
-The entity list endpoint currently loads all rows. This is acceptable for the take-home dataset but must be bounded before bulk entity counts or telemetry are introduced. The Go repository limits the SQL pool to one open connection, which serializes access and suits this MVP but will constrain concurrent ingestion and reads.
+The V1 entity list endpoint continues to load all rows for backward compatibility. The V2.4 frontend uses the bounded keyset-paginated query endpoint; separate map and export queries are independent of that page. The Go repository limits the SQL pool to one open connection, which serializes access and suits this MVP but will constrain concurrent ingestion and reads.
 
 ## Roadmap levels and acceptance criteria
 
@@ -53,17 +53,17 @@ The entity list endpoint currently loads all rows. This is acceptable for the ta
 
 ### Level 2 — Advanced Entity Management
 
-1. **Custom attributes, tags, and categories**
+1. **Custom attributes, tags, and categories — completed in V2.3**
    - Define whether attributes are per entity type or per entity; define allowed JSON types, size limits, validation, and filter semantics before schema work.
    - Keep the existing `type` field as-is; categories/tags are separate concepts.
    - Acceptance: old entity requests still succeed; new attributes are validated on both client and server; tag/category relations do not duplicate.
-2. **Advanced search and filtering**
+2. **Advanced search and filtering — implemented in V2.4B/C**
    - Add server-side query parameters with deterministic ordering and cursor/limit bounds. Preserve the existing `{data: [...]}` response shape and add optional top-level metadata only.
    - Acceptance: combined filters, empty result, malformed filter, page boundaries, and stable cursor behavior are covered.
-3. **CSV and GeoJSON import/export**
+3. **CSV and GeoJSON import/export — completed in V2.4D–V2.4H**
    - Support preview/validation before writing. Validate every row/feature and all references before opening the write transaction. Initial commit mode should be all-or-nothing with a documented duplicate-ID policy and file/row limits.
    - Acceptance: valid import, mixed-invalid preview, invalid file rejection, duplicate handling, transaction rollback, export round-trip, and data-limit behavior are tested.
-4. **Activity timeline**
+4. **Activity timeline — completed in V2.3; imported creation events supported by V2.4D**
    - Append events for entity create/update/delete and completed imports. Events are append-only; corrections are new events, never edits to history.
    - Acceptance: a failed entity write creates no success event; a successful write and its event commit atomically; timeline paging is stable.
 
@@ -104,14 +104,14 @@ The entity list endpoint currently loads all rows. This is acceptable for the ta
 | V2.0 — Planning baseline | This inventory, V2 architecture/contract/roadmap, preserve the existing DB and API | None | Human approves scope, data semantics, and next sprint; no feature code changed |
 | V2.1 — Safe evolution foundation | **COMPLETED (V2.1A–V2.1E).** Versioned SQLite migrations, legacy DB backup/baseline, compatibility tests, OSM URL/config compliance, integration and independent QA | V2.0 approval | Existing two-row DB preserved; migration rerun safe; V1 API tests pass; OSM configuration and frontend/backend regression pass |
 | V2.2 — Map Intelligence | **CLOSED (V2.2A–V2.2E).** Persisted-entity clustering, one-shot Locate Me, Fit All, legend, coordinate inspector/copy, accessible toolbar; no backend/API/schema changes | V2.1; existing map | Backend/frontend regressions and isolated HTTP CRUD verification pass; V2.2D QA verdict PASS with zero P0/P1 findings per user. Browser interaction verification is a documented limitation because no browser executable/harness was available; local API benchmarks do not claim browser performance. OSM attribution/provider compliance retained. |
-| V2.3 — Entity model and activity | Custom-attribute semantics, tags/categories, append-only mutation activity, safe additive schema | V2.1 | Old CRUD clients work; new data validated; mutation+activity atomicity tested |
-| V2.4 — Search and bulk data | Server filtering/pagination, CSV/GeoJSON preview/import/export, atomic commit | V2.3 | Full validation precedes transaction; rollback, limits, duplicate policy, round-trip tests pass |
+| V2.3 — Entity model and activity | **COMPLETED.** Typed custom attributes, tags/categories, append-only mutation activity, additive migration 002 | V2.1 | V1 clients remain compatible; metadata validated; mutation+activity atomicity tested and committed at `7d508dab10bc44ea48cecbc8e47ba9ebad91db1c` |
+| V2.4 — Data operations | **V2.4A–H COMPLETE.** Backend search/pagination and separate map queries, frontend query/map integration, bounded CSV/GeoJSON export and preview/commit import, browser-to-backend integration verification, independent QA, and favicon defect resolution | V2.3 | V1 routes remain unchanged; list pages do not truncate map/export data; imports validate before atomic transaction; preview token binds bytes/options; export/import, metadata round-trip, rollback, map refresh, favicon and regression gates verified |
 | V2.5 — Geospatial intelligence | Geometry contract/library decision, circle/polygon validation, membership/event transitions, history | V2.3; telemetry/auth not required for local single-user evaluation | Pure geometry tests plus transaction/idempotency tests pass |
 | V2.6 — Security gate | Authentication, authorization boundaries, rate limits, secrets, audit actor identity, deployment threat model | Before any external API exposure; can be moved earlier | Anonymous access and role matrix are tested; no external write endpoint is exposed without protection |
 | V2.7 — IoT monitoring | Telemetry model/ingestion, history, battery/signal and thresholds, demo simulator if explicitly enabled | V2.1, V2.6 for external use | Ingestion is bounded/idempotent/protected; demo data is clearly labeled and disabled by default |
 | V2.8 — Enterprise evaluation | Production monitoring, analytics requirements, SQLite/PostGIS benchmarks and migration decision | Measured workload from prior sprints | Written benchmark and go/no-go decision; no database replacement without evidence |
 
-V2.3 and V2.2 can be planned in parallel by the human team, but execution should still use reviewed interfaces and migrations. Database foundation is a prerequisite for every backend feature sprint.
+V2.4 phase ordering and authorization boundaries are specified in `V2.4_IMPLEMENTATION_CONTRACT.md`. Database foundation is a prerequisite for every backend feature sprint.
 
 ## Cross-cutting acceptance gates
 
@@ -158,4 +158,23 @@ V2.3 and V2.2 can be planned in parallel by the human team, but execution should
 - [x] V2.2C backend/frontend regressions, production build, isolated Vite proxy HTTP CRUD, and restart persistence passed. Local API-only benchmark measurements were recorded separately from browser performance.
 - [x] V2.2D verdict PASS with zero P0/P1 findings; source-level/architectural review passed all six Map Intelligence capabilities. User-authorized P2 observations: entity listing is unpaginated (pagination planned for V2.4), and SQLite uses one connection (concurrency evaluation deferred until telemetry workload requires it). The standalone QA report was unavailable in the workspace; this remains a documentation limitation, not evidence of audit failure.
 - [x] V2.2E final backend/frontend regression passed and documentation updated. The authorized commit message is `feat: add GeoEntity V2.2 map intelligence`. Browser-driven cluster, geolocation, keyboard, and responsive checks remain unverified due to missing browser tooling.
-- [ ] V2.3 Entity Model and Activity requires explicit human authorization; define tags/categories/custom attribute semantics and append-only activity contract before implementation.
+
+## V2.3 closure
+
+- [x] V2.3 implementation and integration completed: typed custom attributes, tags/categories and append-only activity events in an additive migration; V1 API behavior retained.
+- [x] V2.3 final commit is `7d508dab10bc44ea48cecbc8e47ba9ebad91db1c` (`feat: complete GeoEntity V2.3 advanced entity management`).
+
+## V2.4 Data Operations Progress
+
+- [x] V2.4A: Planning, contracts, and handoff completed.
+- [x] V2.4B: Backend search, keyset cursor pagination, migration 003 (FTS5 trigram), map viewport (`GET /api/entities/map`), and extent (`GET /api/entities/map/extent`) endpoints completed and verified with race detector and real HTTP daemon lifecycle.
+- [x] V2.4C: Frontend server-side search, keyset pagination ("Load More"), independent map viewport fetching, server-extent "Fit All", off-page detail loading, 413 MAP_RESULT_LIMIT handling, 124 unit/integration tests passing, and real headless Chrome CDP end-to-end multi-viewport verification completed with 0 console errors.
+- [x] V2.4D: Backend CSV/GeoJSON export and preview/commit import implemented with bounded parsing/export, V2.3 metadata validation and atomic entity/catalog/activity writes. Backend tests, race, vet, build, frontend regression and isolated real HTTP/restart checks passed. No schema/dependency changes or staging/commit.
+- [x] V2.4E: Frontend CSV and RFC 7946 GeoJSON export and preview/commit import implemented. Includes Data Operations modal, active filter-scoped exports, spreadsheet-safe formula escaping, raw byte and token integrity verification, row/feature validation tables, CREATE-ONLY all-or-nothing confirmation, automated refresh, 134 passing Vitest unit tests, and real headless Chrome CDP end-to-end multi-viewport verification with 0 console errors.
+- [x] V2.4F: Full integration verification completed with actual CSV/GeoJSON browser downloads and import workflows, isolated SQLite preview/commit/rollback checks, Vite proxy, metadata and map/list refresh. See `V2.4_HANDOFF.md` for results and remaining limits.
+- [x] V2.4G: Independent QA audit PASSED. Full audit of V2.4A–V2.4F completed with 0 P0, 0 P1, 0 P2 defects and 1 P3 defect (missing `favicon.ico` 404). All 3 mandatory unresolved targets resolved (LineString rejection exercised in browser with screenshot, metadata validation permutations exercised in browser with screenshot, favicon 404 investigated and documented). Multi-viewport layouts verified via Chrome CDP. All Go and Vitest regressions pass 100%. V2.4H closure pending explicit authorization.
+- [x] V2.4H: Fixed DEF-01 with a local SVG favicon referenced by `frontend/index.html`; verified HTTP 200 and no favicon fallback in Chrome on Vite dev and production assets. Backend tests/race/vet/build and 136 frontend tests/TypeScript/production build passed. Final diff reviewed; all work remains unstaged and uncommitted pending separate human authorization.
+
+## Next planned phase
+
+- V2.5 — Geospatial Intelligence is the next roadmap milestone. It requires separate human authorization; no V2.5 implementation has started.

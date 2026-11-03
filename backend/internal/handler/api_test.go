@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -56,6 +57,124 @@ func TestHealthAndEmptyList(t *testing.T) {
 	response = request(api, http.MethodGet, "/api/entities", "")
 	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != `{"data":[]}` {
 		t.Fatalf("unexpected empty list: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestServerQueryAndMapEndpointsRemainSeparateFromV1List(t *testing.T) {
+	api, store, _ := newTestAPI(t)
+	createdAt := time.Date(2026, time.November, 3, 0, 0, 0, 0, time.UTC)
+	items := []entity.Entity{
+		{ID: "00000000-0000-4000-8000-000000000001", Name: "Truck Alpha", Type: "vehicle", Description: "north yard", Status: "active", Latitude: -6.2, Longitude: 106.8, CreatedAt: createdAt, UpdatedAt: createdAt},
+		{ID: "00000000-0000-4000-8000-000000000002", Name: "Truck Beta", Type: "vehicle", Description: "south yard", Status: "inactive", Latitude: -6.3, Longitude: 106.9, CreatedAt: createdAt, UpdatedAt: createdAt},
+		{ID: "00000000-0000-4000-8000-000000000003", Name: "Depot", Type: "facility", Description: "warehouse", Status: "active", Latitude: -6.4, Longitude: 106.7, CreatedAt: createdAt, UpdatedAt: createdAt},
+	}
+	for _, item := range items {
+		if err := store.Create(context.Background(), item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	legacy := request(api, http.MethodGet, "/api/entities", "")
+	if legacy.Code != http.StatusOK || strings.Contains(legacy.Body.String(), `"meta"`) {
+		t.Fatalf("V1 list changed: %d %s", legacy.Code, legacy.Body.String())
+	}
+	var legacyEnvelope struct {
+		Data []entity.Entity `json:"data"`
+	}
+	if err := json.Unmarshal(legacy.Body.Bytes(), &legacyEnvelope); err != nil || len(legacyEnvelope.Data) != 3 {
+		t.Fatalf("V1 list data=%+v err=%v", legacyEnvelope, err)
+	}
+
+	first := request(api, http.MethodGet, "/api/entities/query?limit=1", "")
+	if first.Code != http.StatusOK {
+		t.Fatalf("first query page: %d %s", first.Code, first.Body.String())
+	}
+	var page struct {
+		Data []entity.Entity `json:"data"`
+		Meta struct {
+			Limit         int            `json:"limit"`
+			NextCursor    string         `json:"next_cursor"`
+			MatchingCount int            `json:"matching_count"`
+			StatusCounts  map[string]int `json:"status_counts"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Data) != 1 || page.Meta.Limit != 1 || page.Meta.NextCursor == "" || page.Meta.MatchingCount != 3 {
+		t.Fatalf("unexpected first page: %+v", page)
+	}
+	second := request(api, http.MethodGet, "/api/entities/query?limit=1&cursor="+url.QueryEscape(page.Meta.NextCursor), "")
+	if second.Code != http.StatusOK || strings.Contains(second.Body.String(), page.Data[0].ID) {
+		t.Fatalf("second page: %d %s", second.Code, second.Body.String())
+	}
+
+	mapResponse := request(api, http.MethodGet, "/api/entities/map?west=100&south=-10&east=110&north=0", "")
+	if mapResponse.Code != http.StatusOK {
+		t.Fatalf("map response: %d %s", mapResponse.Code, mapResponse.Body.String())
+	}
+	var mapEnvelope struct {
+		Data []repository.MapEntity `json:"data"`
+	}
+	if err := json.Unmarshal(mapResponse.Body.Bytes(), &mapEnvelope); err != nil || len(mapEnvelope.Data) != 3 {
+		t.Fatalf("map dataset=%+v err=%v", mapEnvelope, err)
+	}
+
+	filteredMap := request(api, http.MethodGet, "/api/entities/map?west=100&south=-10&east=110&north=0&q=truck&type=vehicle&status=inactive", "")
+	if filteredMap.Code != http.StatusOK || !strings.Contains(filteredMap.Body.String(), items[1].ID) || strings.Contains(filteredMap.Body.String(), items[0].ID) {
+		t.Fatalf("map filters differ: %d %s", filteredMap.Code, filteredMap.Body.String())
+	}
+	extent := request(api, http.MethodGet, "/api/entities/map/extent?q=truck", "")
+	if extent.Code != http.StatusOK || !strings.Contains(extent.Body.String(), `"count":2`) {
+		t.Fatalf("map extent: %d %s", extent.Code, extent.Body.String())
+	}
+
+	// While viewing page 2, map endpoint still returns all 3 markers
+	mapWhileOnPage2 := request(api, http.MethodGet, "/api/entities/map?west=100&south=-10&east=110&north=0", "")
+	if mapWhileOnPage2.Code != http.StatusOK || !strings.Contains(mapWhileOnPage2.Body.String(), items[0].ID) || !strings.Contains(mapWhileOnPage2.Body.String(), items[1].ID) || !strings.Contains(mapWhileOnPage2.Body.String(), items[2].ID) {
+		t.Fatalf("map markers were improperly tied to list page: %s", mapWhileOnPage2.Body.String())
+	}
+
+	// Deletion removes from map and list
+	del := request(api, http.MethodDelete, "/api/entities/"+items[1].ID, "")
+	if del.Code != http.StatusNoContent {
+		t.Fatalf("delete status=%d", del.Code)
+	}
+	mapAfterDel := request(api, http.MethodGet, "/api/entities/map?west=100&south=-10&east=110&north=0", "")
+	if strings.Contains(mapAfterDel.Body.String(), items[1].ID) {
+		t.Fatalf("deleted entity still returned in map dataset: %s", mapAfterDel.Body.String())
+	}
+}
+
+func TestQueryEndpointRejectsInvalidAndRepeatedParameters(t *testing.T) {
+	api, _, _ := newTestAPI(t)
+	for _, path := range []string{
+		"/api/entities/query?limit=0",
+		"/api/entities/query?limit=",
+		"/api/entities/query?limit=101",
+		"/api/entities/query?type=sensor",
+		"/api/entities/query?cursor=not-a-cursor",
+		"/api/entities/query?q=a&q=b",
+		"/api/entities/query?unknown=value",
+	} {
+		response := request(api, http.MethodGet, path, "")
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"error"`) {
+			t.Errorf("%s => %d %s", path, response.Code, response.Body.String())
+		}
+	}
+	for _, path := range []string{
+		"/api/entities/map?west=100&south=10&east=110&north=0",
+		"/api/entities/map?west=-181&south=-10&east=110&north=0",
+		"/api/entities/map?west=100&south=-10&east=110",
+	} {
+		response := request(api, http.MethodGet, path, "")
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `INVALID_BOUNDS`) {
+			t.Errorf("%s => %d %s", path, response.Code, response.Body.String())
+		}
+	}
+	response := request(api, http.MethodPost, "/api/entities/query", "")
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("method status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

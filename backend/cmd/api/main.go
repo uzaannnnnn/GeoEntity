@@ -37,8 +37,8 @@ func main() {
 		Addr:              addr,
 		Handler:           handler.New(store, logger),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 	serverErrors := make(chan error, 1)

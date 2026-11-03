@@ -40,7 +40,7 @@ func TestV22RowsSurviveAdvancedMigrationAndRerun(t *testing.T) {
 	if got := entitySnapshot(t, db); len(got) != 1 || got[0] != before[0] {
 		t.Fatalf("entity changed: before=%v after=%v", before, got)
 	}
-	if got := ledgerVersions(t, db); len(got) != 2 || got[1] != 2 {
+	if got := ledgerVersions(t, db); len(got) != 3 || got[1] != 2 || got[2] != 3 {
 		t.Fatalf("ledger=%v", got)
 	}
 	if err := Migrate(ctx, db); err != nil {
@@ -48,6 +48,140 @@ func TestV22RowsSurviveAdvancedMigrationAndRerun(t *testing.T) {
 	}
 	if got := entitySnapshot(t, db)[0]; got != before[0] {
 		t.Fatalf("reopen/rerun changed entity: %s", got)
+	}
+}
+
+func TestV23MetadataAndActivitySurviveSearchMigration(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "v23-search.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+		t.Fatal(err)
+	}
+	v1, err := fs.ReadFile(migrations, "migrations/001_create_entities.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, err := fs.ReadFile(migrations, "migrations/002_advanced_entity_management.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v23 := fstest.MapFS{
+		"migrations/001_create_entities.sql":            &fstest.MapFile{Data: v1},
+		"migrations/002_advanced_entity_management.sql": &fstest.MapFile{Data: v2},
+	}
+	if err := MigrateFS(ctx, db, v23); err != nil {
+		t.Fatalf("prepare V2.3 schema: %v", err)
+	}
+	const entityID = "00000000-0000-4000-8000-000000000077"
+	_, err = db.Exec(`INSERT INTO entities VALUES(?,?,?,?,?,?,?,?,?)`, entityID, "Searchable V2.3 asset", "vehicle", "legacy searchable description", "active", 1.25, -2.5, "2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO attribute_definitions(id,entity_type,key,label,value_type,required,archived,created_at,updated_at) VALUES('definition-1','vehicle','serial','Serial','string',0,0,'2024-01-01T00:00:00Z','2024-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO entity_attribute_values(entity_id,definition_id,text_value) VALUES(?, 'definition-1','A-7')`, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO tags(id,name,normalized_name,created_at) VALUES('tag-1','Fleet','fleet','2024-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO entity_tags(entity_id,tag_id) VALUES(?, 'tag-1')`, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO categories(id,name,normalized_name,created_at) VALUES('category-1','Operations','operations','2024-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO entity_categories(entity_id,category_id) VALUES(?, 'category-1')`, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO activity_events(id,entity_id,event_type,occurred_at,actor_kind,payload_version,payload) VALUES('event-1',?,'entity.created','2024-01-01T00:00:00.000000000Z','system',1,'{}')`, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := entitySnapshot(t, db)
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatalf("apply V2.4 migration: %v", err)
+	}
+	if after := entitySnapshot(t, db); len(after) != 1 || after[0] != before[0] {
+		t.Fatalf("entity changed across search migration: before=%v after=%v", before, after)
+	}
+	for table, want := range map[string]int{"entity_attribute_values": 1, "entity_tags": 1, "entity_categories": 1, "activity_events": 1} {
+		var got int
+		if err := db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&got); err != nil || got != want {
+			t.Fatalf("%s count=%d want=%d err=%v", table, got, want, err)
+		}
+	}
+	var matches int
+	if err := db.QueryRow(`SELECT count(*) FROM entity_search WHERE entity_search MATCH ?`, `"Searchable V2.3"`).Scan(&matches); err != nil || matches != 1 {
+		t.Fatalf("V2.3 data not indexed: count=%d err=%v", matches, err)
+	}
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatalf("repeat migration: %v", err)
+	}
+	if got := ledgerVersions(t, db); len(got) != 3 || got[2] != 3 {
+		t.Fatalf("migration ledger=%v", got)
+	}
+}
+
+func TestFailedSearchMigrationRollsBackVirtualTableTriggersIndexesAndLedger(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "search-migration-rollback.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	v1, err := fs.ReadFile(migrations, "migrations/001_create_entities.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, err := fs.ReadFile(migrations, "migrations/002_advanced_entity_management.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v3, err := fs.ReadFile(migrations, "migrations/003_entity_search_and_pagination.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline := fstest.MapFS{
+		"migrations/001_create_entities.sql":            &fstest.MapFile{Data: v1},
+		"migrations/002_advanced_entity_management.sql": &fstest.MapFile{Data: v2},
+	}
+	if err := MigrateFS(ctx, db, baseline); err != nil {
+		t.Fatal(err)
+	}
+	broken := append(append([]byte(nil), v3...), []byte("\nCREATE TABLE idx_entities_type_created_at_id(id INTEGER);\n")...)
+	withBrokenV3 := fstest.MapFS{
+		"migrations/001_create_entities.sql":              &fstest.MapFile{Data: v1},
+		"migrations/002_advanced_entity_management.sql":   &fstest.MapFile{Data: v2},
+		"migrations/003_entity_search_and_pagination.sql": &fstest.MapFile{Data: broken},
+	}
+	if err := MigrateFS(ctx, db, withBrokenV3); err == nil {
+		t.Fatal("expected injected migration failure")
+	}
+	for _, name := range []string{"entity_search", "entities_search_ai", "entities_search_ad", "entities_search_au", "idx_entities_type_created_at_id", "idx_entities_status_created_at_id"} {
+		var found int
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name=?`, name).Scan(&found); err != nil {
+			t.Fatal(err)
+		}
+		if found != 0 {
+			t.Errorf("failed migration left schema object %q", name)
+		}
+	}
+	if got := ledgerVersions(t, db); len(got) != 2 || got[1] != 2 {
+		t.Fatalf("failed migration changed ledger: %v", got)
 	}
 }
 

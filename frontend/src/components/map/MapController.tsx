@@ -1,20 +1,21 @@
 import { useEffect, useRef } from 'react';
 import { useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Entity } from '../../types/entity';
+import { Entity, MapEntity } from '../../types/entity';
 import { UserLocation } from '../../utils/geolocation';
-import { getValidEntityPoints, calculateFitTarget } from '../../utils/mapBounds';
+import { getValidEntityPoints, calculateFitTarget, FitTarget } from '../../utils/mapBounds';
 import { flyToEntity } from '../../utils/entityNavigation';
 import { subscribeToMapCenter } from '../../utils/mapCenter';
 import { canZoomToShowMarker } from '../../utils/mapMarkerReveal';
 
 interface MapControllerProps {
-  entities: Entity[];
-  selectedEntity: Entity | null;
+  entities?: (Entity | MapEntity)[];
+  selectedEntity: Entity | MapEntity | null;
   centerRequest: number;
-  fitAllRequest: number;
-  shouldFitBounds: boolean;
-  onBoundsFitted: () => void;
+  fitAllRequest?: number;
+  fitTargetRequest?: { target: FitTarget; timestamp: number } | null;
+  shouldFitBounds?: boolean;
+  onBoundsFitted?: () => void;
   draftLocation: { lat: number; lng: number } | null;
   userLocationFlyRequest: { location: UserLocation; timestamp: number } | null;
   clusterGroupRef?: React.RefObject<L.MarkerClusterGroup | null>;
@@ -24,10 +25,11 @@ interface MapControllerProps {
 }
 
 export function MapController({
-  entities,
+  entities = [],
   selectedEntity,
   centerRequest,
   fitAllRequest,
+  fitTargetRequest,
   shouldFitBounds,
   onBoundsFitted,
   draftLocation,
@@ -41,6 +43,7 @@ export function MapController({
   const prevSelectedIdRef = useRef<string | null>(null);
   const handledCenterRequestRef = useRef(0);
   const handledFitAllRequestRef = useRef(0);
+  const handledFitTargetTimestampRef = useRef(0);
   const handledUserFlyRequestRef = useRef(0);
   const onCenterChangeRef = useRef(onCenterChange);
   onCenterChangeRef.current = onCenterChange;
@@ -50,11 +53,7 @@ export function MapController({
     return subscribeToMapCenter(map, onCenterChangeRef);
   }, [map]);
 
-  // Fit bounds helper for valid entity points
-  const executeFit = (fitMaxZoom = maxZoom) => {
-    const validPoints = getValidEntityPoints(entities);
-    const target = calculateFitTarget(validPoints, fitMaxZoom);
-
+  const applyFitTarget = (target: FitTarget) => {
     if (target.type === 'center') {
       map.flyTo(target.center, target.zoom, { duration: 1 });
     } else if (target.type === 'bounds') {
@@ -63,33 +62,51 @@ export function MapController({
     }
   };
 
+  // Fit bounds helper for valid entity points (fallback / legacy)
+  const executeFit = (fitMaxZoom = maxZoom) => {
+    const validPoints = getValidEntityPoints(entities as Entity[]);
+    const target = calculateFitTarget(validPoints, fitMaxZoom);
+    applyFitTarget(target);
+  };
+
+  // Explicit Fit Target (e.g. from server extent endpoint)
+  useEffect(() => {
+    if (
+      fitTargetRequest &&
+      fitTargetRequest.timestamp !== handledFitTargetTimestampRef.current
+    ) {
+      handledFitTargetTimestampRef.current = fitTargetRequest.timestamp;
+      applyFitTarget(fitTargetRequest.target);
+    }
+  }, [fitTargetRequest, map]);
+
   // Initial load or manual refresh fit bounds
   useEffect(() => {
     if (shouldFitBounds && entities.length > 0) {
       executeFit(maxZoom);
-      onBoundsFitted();
+      onBoundsFitted?.();
     }
   }, [shouldFitBounds, entities, map, onBoundsFitted, maxZoom]);
 
-  // Explicit Fit All action triggered from toolbar
+  // Explicit Fit All action triggered from toolbar (legacy fallback if target not used)
   useEffect(() => {
-    if (fitAllRequest && fitAllRequest !== handledFitAllRequestRef.current) {
+    if (fitAllRequest && fitAllRequest !== handledFitAllRequestRef.current && !fitTargetRequest) {
       handledFitAllRequestRef.current = fitAllRequest;
       executeFit(maxZoom);
     }
-  }, [fitAllRequest, entities, map, maxZoom]);
+  }, [fitAllRequest, fitTargetRequest, entities, map, maxZoom]);
 
   // Fly to selected entity when selection changes or center is explicitly requested
-  const revealAndFlyToSelected = (entity: Entity) => {
+  const revealAndFlyToSelected = (entity: Entity | MapEntity) => {
     const marker = markerMapRef?.current.get(entity.id);
     const clusterGroup = clusterGroupRef?.current;
 
     if (marker && clusterGroup && canZoomToShowMarker(clusterGroup, marker)) {
       clusterGroup.zoomToShowLayer(marker, () => {
-        flyToEntity(map, entity);
+        flyToEntity(map, entity as Entity);
       });
     } else {
-      flyToEntity(map, entity);
+      flyToEntity(map, entity as Entity);
     }
   };
 

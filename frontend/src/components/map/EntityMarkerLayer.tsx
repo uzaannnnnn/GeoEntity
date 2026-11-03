@@ -2,18 +2,20 @@ import { RefObject, MutableRefObject } from 'react';
 import { Marker, Popup, Tooltip } from 'react-leaflet';
 import L, { LatLngExpression } from 'leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
-import { Entity } from '../../types/entity';
+import { Entity, MapEntity } from '../../types/entity';
 import { formatCoordinate } from '../../utils/formatters';
 import { StatusBadge } from '../StatusBadge';
 import { TypeBadge } from '../TypeBadge';
 import { createEntityDivIcon, createClusterDivIcon } from './markerIcons';
 
+export type AnyMarkerEntity = Entity | MapEntity;
+
 interface EntityMarkerLayerProps {
-  entities: Entity[];
-  selectedEntity: Entity | null;
-  onSelectEntity: (entity: Entity) => void;
-  onViewDetailsClick?: (entity: Entity) => void;
-  onEditClick?: (entity: Entity) => void;
+  entities: AnyMarkerEntity[];
+  selectedEntity: AnyMarkerEntity | null;
+  onSelectEntity: (entity: AnyMarkerEntity) => void;
+  onViewDetailsClick?: (entity: AnyMarkerEntity) => void;
+  onEditClick?: (entity: AnyMarkerEntity) => void;
   clusterGroupRef?: RefObject<L.MarkerClusterGroup | null>;
   markerMapRef?: MutableRefObject<Map<string, L.Marker>>;
 }
@@ -41,6 +43,7 @@ export function EntityMarkerLayer({
         const isSelected = selectedEntity?.id === entity.id;
         const position: LatLngExpression = [entity.latitude, entity.longitude];
         const icon = createEntityDivIcon(entity.type, entity.status, isSelected);
+        const description = 'description' in entity ? entity.description : undefined;
 
         return (
           <Marker
@@ -79,8 +82,8 @@ export function EntityMarkerLayer({
                   <TypeBadge type={entity.type} />
                   <StatusBadge status={entity.status} />
                 </div>
-                {entity.description && (
-                  <p className="popup-desc">{entity.description}</p>
+                {description && (
+                  <p className="popup-desc">{description}</p>
                 )}
                 <div className="popup-coords">
                   <span>Lat: {formatCoordinate(entity.latitude)}</span>

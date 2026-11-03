@@ -1,4 +1,4 @@
-import { LogoIcon, PlusIcon, RefreshIcon, AttributesIcon } from './Icons';
+import { LogoIcon, PlusIcon, RefreshIcon, AttributesIcon, DataExchangeIcon } from './Icons';
 
 interface HeaderProps {
   totalCount: number;
@@ -10,6 +10,7 @@ interface HeaderProps {
   onAddClick: () => void;
   onRefreshClick: () => void;
   onManageDefinitionsClick?: () => void;
+  onDataExchangeClick?: () => void;
   isCreateActive: boolean;
 }
 
@@ -23,6 +24,7 @@ export function Header({
   onAddClick,
   onRefreshClick,
   onManageDefinitionsClick,
+  onDataExchangeClick,
   isCreateActive,
 }: HeaderProps) {
   return (
@@ -88,6 +90,19 @@ export function Header({
           >
             <AttributesIcon size={16} />
             <span>Attributes</span>
+          </button>
+        )}
+
+        {onDataExchangeClick && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onDataExchangeClick}
+            title="Export or import entities as CSV / GeoJSON"
+            aria-label="Open Data Operations"
+          >
+            <DataExchangeIcon size={16} />
+            <span>Data Operations</span>
           </button>
         )}
 

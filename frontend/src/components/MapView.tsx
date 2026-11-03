@@ -1,17 +1,19 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
 import L, { LatLngExpression } from 'leaflet';
-import { Entity } from '../types/entity';
+import { Entity, MapBoundsParams } from '../types/entity';
 import { getMapTileConfig } from '../utils/mapConfig';
 import { UserLocation, getCurrentUserLocation, GeolocationErrorDetails } from '../utils/geolocation';
-import { getValidEntityPoints } from '../utils/mapBounds';
-import { EntityMarkerLayer } from './map/EntityMarkerLayer';
+import { FitTarget } from '../utils/mapBounds';
+import { normalizeLeafletBounds, areBoundsEqual } from '../utils/mapViewport';
+import { EntityMarkerLayer, AnyMarkerEntity } from './map/EntityMarkerLayer';
 import { DraftLocationMarker } from './map/DraftLocationMarker';
 import { UserLocationLayer } from './map/UserLocationLayer';
 import { MapController } from './map/MapController';
 import { MapToolbar } from './map/MapToolbar';
 import { MapLegend } from './map/MapLegend';
 import { CoordinateInspector } from './map/CoordinateInspector';
+import { AlertIcon } from './Icons';
 import { updateMapCenter } from '../utils/mapCenter';
 
 // Map event listener for location picking clicks
@@ -32,26 +34,67 @@ function MapEvents({
   return null;
 }
 
+// Map event listener for debounced viewport bounds reporting
+function MapViewportListener({
+  onBoundsChange,
+}: {
+  onBoundsChange?: (bounds: MapBoundsParams) => void;
+}) {
+  const onBoundsChangeRef = useRef(onBoundsChange);
+  onBoundsChangeRef.current = onBoundsChange;
+  const prevBoundsRef = useRef<MapBoundsParams | null>(null);
+
+  const notifyBounds = useCallback((mapInstance: L.Map) => {
+    if (!onBoundsChangeRef.current) return;
+    const b = mapInstance.getBounds();
+    const normalized = normalizeLeafletBounds(b);
+    if (!areBoundsEqual(prevBoundsRef.current, normalized)) {
+      prevBoundsRef.current = normalized;
+      onBoundsChangeRef.current(normalized);
+    }
+  }, []);
+
+  const map = useMapEvents({
+    moveend() {
+      notifyBounds(map);
+    },
+    zoomend() {
+      notifyBounds(map);
+    },
+  });
+
+  useEffect(() => {
+    notifyBounds(map);
+  }, [map, notifyBounds]);
+
+  return null;
+}
+
 export interface MapViewProps {
-  entities: Entity[];
+  mapMarkers: AnyMarkerEntity[];
   selectedEntity: Entity | null;
   centerRequest: number;
   draftLocation: { lat: number; lng: number } | null;
   isSelectingLocation: boolean;
-  onSelectEntity: (entity: Entity) => void;
+  onSelectEntity: (entity: AnyMarkerEntity) => void;
   onLocationSelected: (lat: number, lng: number) => void;
   onDraftDragEnd?: (lat: number, lng: number) => void;
-  shouldFitBounds: boolean;
-  onBoundsFitted: () => void;
-  onViewDetailsClick?: (entity: Entity) => void;
-  onEditClick?: (entity: Entity) => void;
+  onBoundsChange?: (bounds: MapBoundsParams) => void;
+  onFitAllClick?: () => void;
+  matchingCount?: number;
+  isMarkersLoading?: boolean;
+  mapLimitExceeded?: boolean;
+  mapError?: string | null;
+  fitTargetRequest?: { target: FitTarget; timestamp: number } | null;
+  onViewDetailsClick?: (entity: AnyMarkerEntity) => void;
+  onEditClick?: (entity: AnyMarkerEntity) => void;
   tileUrl?: string;
   tileAttribution?: string;
   maxZoom?: number;
 }
 
 export function MapView({
-  entities,
+  mapMarkers,
   selectedEntity,
   centerRequest,
   draftLocation,
@@ -59,8 +102,13 @@ export function MapView({
   onSelectEntity,
   onLocationSelected,
   onDraftDragEnd,
-  shouldFitBounds,
-  onBoundsFitted,
+  onBoundsChange,
+  onFitAllClick,
+  matchingCount = 0,
+  isMarkersLoading = false,
+  mapLimitExceeded = false,
+  mapError,
+  fitTargetRequest,
   onViewDetailsClick,
   onEditClick,
   tileUrl: propTileUrl,
@@ -97,7 +145,6 @@ export function MapView({
   const [isLegendOpen, setIsLegendOpen] = useState<boolean>(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
   const [currentCenter, setCurrentCenter] = useState<{ lat: number; lng: number }>(defaultCenterCoordinates);
-  const [fitAllRequest, setFitAllRequest] = useState<number>(0);
 
   const handleCenterChange = useCallback((lat: number, lng: number) => {
     setCurrentCenter((previous) => updateMapCenter(previous, { lat, lng }));
@@ -107,21 +154,16 @@ export function MapView({
   const clusterGroupRef = useRef<L.MarkerClusterGroup | null>(null);
   const markerMapRef = useRef<Map<string, L.Marker>>(new Map());
 
-  // Count valid entity points for Fit All disabled state
-  const validPointsCount = useMemo(() => {
-    return getValidEntityPoints(entities).length;
-  }, [entities]);
-
   // Handle Fit All action
   const handleFitAll = useCallback(() => {
-    if (validPointsCount === 0) {
-      setToolbarMessage('No valid entity coordinates to fit.');
+    if (matchingCount === 0) {
+      setToolbarMessage('No matching entities to fit.');
       setTimeout(() => setToolbarMessage(null), 4000);
       return;
     }
     setToolbarMessage(null);
-    setFitAllRequest((prev) => prev + 1);
-  }, [validPointsCount]);
+    onFitAllClick?.();
+  }, [matchingCount, onFitAllClick]);
 
   // Handle Locate Me action
   const handleLocateMe = useCallback(async () => {
@@ -158,9 +200,36 @@ export function MapView({
         </div>
       )}
 
+      {/* HTTP 413 Map Result Limit Warning Banner */}
+      {mapLimitExceeded && (
+        <div className="map-limit-banner animate-fade-in" role="alert">
+          <AlertIcon size={16} className="text-warning" />
+          <span className="banner-text">
+            <strong>Area contains too many entities (&gt; 5,000):</strong> Please zoom in or apply
+            filters to view map markers.
+          </span>
+        </div>
+      )}
+
+      {/* Map Error Banner */}
+      {mapError && !mapLimitExceeded && (
+        <div className="map-limit-banner map-error-banner animate-fade-in" role="alert">
+          <AlertIcon size={16} className="text-danger" />
+          <span className="banner-text">{mapError}</span>
+        </div>
+      )}
+
+      {/* Loading indicator pill */}
+      {isMarkersLoading && (
+        <div className="map-loading-indicator animate-fade-in" role="status">
+          <span className="spinner-icon spinner-sm" aria-hidden="true" />
+          <span>Updating markers...</span>
+        </div>
+      )}
+
       {/* Advanced Map Controls Toolbar (Top Right) */}
       <MapToolbar
-        validPointsCount={validPointsCount}
+        validPointsCount={matchingCount}
         isLocating={isLocating}
         geolocationError={geolocationError}
         toolbarMessage={toolbarMessage}
@@ -177,10 +246,7 @@ export function MapView({
       />
 
       {/* Collapsible Visual Legend Panel */}
-      <MapLegend
-        isOpen={isLegendOpen}
-        onClose={() => setIsLegendOpen(false)}
-      />
+      <MapLegend isOpen={isLegendOpen} onClose={() => setIsLegendOpen(false)} />
 
       {/* Coordinate Inspector Panel */}
       <CoordinateInspector
@@ -203,12 +269,10 @@ export function MapView({
         />
 
         <MapController
-          entities={entities}
+          entities={mapMarkers}
           selectedEntity={selectedEntity}
           centerRequest={centerRequest}
-          fitAllRequest={fitAllRequest}
-          shouldFitBounds={shouldFitBounds}
-          onBoundsFitted={onBoundsFitted}
+          fitTargetRequest={fitTargetRequest}
           draftLocation={draftLocation}
           userLocationFlyRequest={userLocationFlyRequest}
           clusterGroupRef={clusterGroupRef}
@@ -217,14 +281,13 @@ export function MapView({
           maxZoom={tileConfig.maxZoom}
         />
 
-        <MapEvents
-          isSelectingLocation={isSelectingLocation}
-          onMapClick={onLocationSelected}
-        />
+        <MapEvents isSelectingLocation={isSelectingLocation} onMapClick={onLocationSelected} />
 
-        {/* Feature A: Clustered Persisted Entity Markers */}
+        <MapViewportListener onBoundsChange={onBoundsChange} />
+
+        {/* Clustered Persisted Entity Markers from separate Map API */}
         <EntityMarkerLayer
-          entities={entities}
+          entities={mapMarkers}
           selectedEntity={selectedEntity}
           onSelectEntity={onSelectEntity}
           onViewDetailsClick={onViewDetailsClick}
@@ -233,14 +296,11 @@ export function MapView({
           markerMapRef={markerMapRef}
         />
 
-        {/* Feature B: Transient Current User Location Layer (Outside cluster) */}
+        {/* Transient Current User Location Layer (Outside cluster) */}
         <UserLocationLayer location={userLocation} />
 
         {/* Draft/Placement marker for Create or Update flow (Outside cluster) */}
-        <DraftLocationMarker
-          draftLocation={draftLocation}
-          onDraftDragEnd={onDraftDragEnd}
-        />
+        <DraftLocationMarker draftLocation={draftLocation} onDraftDragEnd={onDraftDragEnd} />
       </MapContainer>
     </div>
   );

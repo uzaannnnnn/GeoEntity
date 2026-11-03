@@ -1,15 +1,28 @@
-import { useMemo, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Entity, EntityStatus, EntityType } from '../types/entity';
 import { StatusBadge } from './StatusBadge';
 import { TypeBadge } from './TypeBadge';
 import { SearchIcon, PlusIcon, CloseIcon, AlertIcon } from './Icons';
 import { formatCoordinate } from '../utils/formatters';
+import { hasActiveFilters } from '../utils/searchFilter';
 
-interface EntityListProps {
+export interface EntityListFilters {
+  q: string;
+  type: EntityType | 'all';
+  status: EntityStatus | 'all';
+}
+
+export interface EntityListProps {
   entities: Entity[];
   selectedEntity: Entity | null;
   isLoading: boolean;
+  isLoadingMore?: boolean;
   error: string | null;
+  matchingCount: number;
+  hasMore: boolean;
+  activeFilters: EntityListFilters;
+  onFilterChange: (filters: EntityListFilters) => void;
+  onLoadMore: () => void;
   onSelectEntity: (entity: Entity) => void;
   onAddNewClick: () => void;
   onRetry: () => void;
@@ -19,36 +32,95 @@ export function EntityList({
   entities,
   selectedEntity,
   isLoading,
+  isLoadingMore = false,
   error,
+  matchingCount,
+  hasMore,
+  activeFilters,
+  onFilterChange,
+  onLoadMore,
   onSelectEntity,
   onAddNewClick,
   onRetry,
 }: EntityListProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState<EntityType | 'all'>('all');
-  const [statusFilter, setStatusFilter] = useState<EntityStatus | 'all'>('all');
+  // Local immediate state for typing responsiveness
+  const [searchTerm, setSearchTerm] = useState(activeFilters.q);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isInternalChangeRef = useRef(false);
 
-  const filteredEntities = useMemo(() => {
-    return entities.filter((entity) => {
-      const matchSearch =
-        !searchTerm.trim() ||
-        entity.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        entity.description.toLowerCase().includes(searchTerm.toLowerCase());
+  // Sync external filter changes (e.g. from reset) into local search input
+  useEffect(() => {
+    if (!isInternalChangeRef.current) {
+      setSearchTerm(activeFilters.q);
+    }
+    isInternalChangeRef.current = false;
+  }, [activeFilters.q]);
 
-      const matchType = typeFilter === 'all' || entity.type === typeFilter;
-      const matchStatus = statusFilter === 'all' || entity.status === statusFilter;
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
-      return matchSearch && matchType && matchStatus;
-    });
-  }, [entities, searchTerm, typeFilter, statusFilter]);
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    isInternalChangeRef.current = true;
 
-  const hasActiveFilters = searchTerm !== '' || typeFilter !== 'all' || statusFilter !== 'all';
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
 
-  const clearFilters = () => {
-    setSearchTerm('');
-    setTypeFilter('all');
-    setStatusFilter('all');
+    debounceTimerRef.current = setTimeout(() => {
+      onFilterChange({
+        ...activeFilters,
+        q: value,
+      });
+    }, 300);
   };
+
+  const handleClearSearch = () => {
+    setSearchTerm('');
+    isInternalChangeRef.current = true;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    onFilterChange({
+      ...activeFilters,
+      q: '',
+    });
+  };
+
+  const handleTypeChange = (newType: EntityType | 'all') => {
+    onFilterChange({
+      ...activeFilters,
+      type: newType,
+    });
+  };
+
+  const handleStatusChange = (newStatus: EntityStatus | 'all') => {
+    onFilterChange({
+      ...activeFilters,
+      status: newStatus,
+    });
+  };
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    isInternalChangeRef.current = true;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    onFilterChange({
+      q: '',
+      type: 'all',
+      status: 'all',
+    });
+  };
+
+  const isFiltered = hasActiveFilters(activeFilters) || searchTerm.trim() !== '';
 
   return (
     <div className="entity-list-panel">
@@ -61,13 +133,14 @@ export function EntityList({
             className="search-input"
             placeholder="Search by name or description..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            aria-label="Search entities by name or description"
           />
           {searchTerm && (
             <button
               type="button"
               className="search-clear-btn"
-              onClick={() => setSearchTerm('')}
+              onClick={handleClearSearch}
               aria-label="Clear search"
             >
               <CloseIcon size={14} />
@@ -78,8 +151,8 @@ export function EntityList({
         <div className="filters-row">
           <select
             className="filter-select"
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value as EntityType | 'all')}
+            value={activeFilters.type}
+            onChange={(e) => handleTypeChange(e.target.value as EntityType | 'all')}
             aria-label="Filter by type"
           >
             <option value="all">All Types</option>
@@ -91,8 +164,8 @@ export function EntityList({
 
           <select
             className="filter-select"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as EntityStatus | 'all')}
+            value={activeFilters.status}
+            onChange={(e) => handleStatusChange(e.target.value as EntityStatus | 'all')}
             aria-label="Filter by status"
           >
             <option value="all">All Statuses</option>
@@ -101,11 +174,11 @@ export function EntityList({
             <option value="inactive">Inactive</option>
           </select>
 
-          {hasActiveFilters && (
+          {isFiltered && (
             <button
               type="button"
               className="btn btn-ghost btn-xs"
-              onClick={clearFilters}
+              onClick={handleResetFilters}
               title="Reset all filters"
             >
               Reset
@@ -115,7 +188,8 @@ export function EntityList({
 
         <div className="list-counts">
           <span>
-            Showing <strong>{filteredEntities.length}</strong> of {entities.length} entities
+            Showing <strong>{entities.length}</strong> of{' '}
+            <strong>{isLoading ? '...' : matchingCount}</strong> entities
           </span>
         </div>
       </div>
@@ -148,7 +222,7 @@ export function EntityList({
           </div>
         )}
 
-        {!isLoading && !error && entities.length === 0 && (
+        {!isLoading && !error && matchingCount === 0 && !isFiltered && (
           <div className="state-card state-empty">
             <div className="empty-icon-wrapper">
               <PlusIcon size={32} />
@@ -165,20 +239,20 @@ export function EntityList({
           </div>
         )}
 
-        {!isLoading && !error && entities.length > 0 && filteredEntities.length === 0 && (
+        {!isLoading && !error && matchingCount === 0 && isFiltered && (
           <div className="state-card state-empty">
             <SearchIcon size={32} className="state-icon text-muted" />
             <h4 className="state-title">No Matching Entities</h4>
             <p className="state-message">No entity matches the selected filters or search query.</p>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={handleResetFilters}>
               Reset Filters
             </button>
           </div>
         )}
 
-        {!isLoading && !error && filteredEntities.length > 0 && (
+        {!isLoading && !error && entities.length > 0 && (
           <div className="entity-cards-scroll">
-            {filteredEntities.map((entity) => {
+            {entities.map((entity) => {
               const isSelected = selectedEntity?.id === entity.id;
 
               return (
@@ -221,6 +295,31 @@ export function EntityList({
                 </div>
               );
             })}
+
+            {/* Pagination Controls */}
+            {hasMore && (
+              <div className="list-pagination-controls">
+                <button
+                  type="button"
+                  className={`btn btn-secondary btn-sm btn-load-more ${isLoadingMore ? 'is-loading' : ''}`}
+                  onClick={onLoadMore}
+                  disabled={isLoadingMore}
+                  aria-label="Load more entities from server"
+                >
+                  {isLoadingMore ? (
+                    'Loading More...'
+                  ) : (
+                    `Load More (${entities.length} of ${matchingCount})`
+                  )}
+                </button>
+              </div>
+            )}
+
+            {!hasMore && entities.length > 0 && (
+              <div className="list-end-indicator">
+                <span>All {matchingCount} matching entities loaded</span>
+              </div>
+            )}
           </div>
         )}
       </div>

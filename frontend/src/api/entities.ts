@@ -1,5 +1,16 @@
 import { apiClient } from './client';
-import { ApiDataResponse, Entity, EntityInput } from '../types/entity';
+import {
+  ApiDataResponse,
+  Entity,
+  EntityInput,
+  EntityPageResponse,
+  EntityQueryParams,
+  EntityType,
+  EntityStatus,
+  MapEntity,
+  MapQueryParams,
+  MapExtentData,
+} from '../types/entity';
 
 export interface HealthStatus {
   status: string;
@@ -13,6 +24,54 @@ export const entitiesApi = {
 
   async getAll(): Promise<Entity[]> {
     const res = await apiClient.get<ApiDataResponse<Entity[]>>('/entities');
+    return res.data;
+  },
+
+  async query(params: EntityQueryParams = {}): Promise<EntityPageResponse> {
+    const sp = new URLSearchParams();
+    const q = params.q?.trim();
+    if (q) sp.set('q', q);
+    if (params.type && params.type !== 'all') sp.set('type', params.type);
+    if (params.status && params.status !== 'all') sp.set('status', params.status);
+    if (typeof params.limit === 'number' && params.limit > 0) sp.set('limit', String(params.limit));
+    const cursor = params.cursor?.trim();
+    if (cursor) sp.set('cursor', cursor);
+
+    const qs = sp.toString();
+    const path = qs ? `/entities/query?${qs}` : '/entities/query';
+    return apiClient.get<EntityPageResponse>(path);
+  },
+
+  async getMapEntities(params: MapQueryParams): Promise<MapEntity[]> {
+    const sp = new URLSearchParams();
+    sp.set('west', String(params.west));
+    sp.set('south', String(params.south));
+    sp.set('east', String(params.east));
+    sp.set('north', String(params.north));
+
+    const q = params.q?.trim();
+    if (q) sp.set('q', q);
+    if (params.type && params.type !== 'all') sp.set('type', params.type);
+    if (params.status && params.status !== 'all') sp.set('status', params.status);
+
+    const res = await apiClient.get<ApiDataResponse<MapEntity[]>>(`/entities/map?${sp.toString()}`);
+    return res.data;
+  },
+
+  async getMapExtent(filters?: {
+    q?: string;
+    type?: EntityType | 'all';
+    status?: EntityStatus | 'all';
+  }): Promise<MapExtentData> {
+    const sp = new URLSearchParams();
+    const q = filters?.q?.trim();
+    if (q) sp.set('q', q);
+    if (filters?.type && filters.type !== 'all') sp.set('type', filters.type);
+    if (filters?.status && filters.status !== 'all') sp.set('status', filters.status);
+
+    const qs = sp.toString();
+    const path = qs ? `/entities/map/extent?${qs}` : '/entities/map/extent';
+    const res = await apiClient.get<ApiDataResponse<MapExtentData>>(path);
     return res.data;
   },
 

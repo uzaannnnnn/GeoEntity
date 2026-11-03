@@ -171,4 +171,136 @@ describe('entitiesApi', () => {
       field: 'latitude',
     });
   });
+
+  it('queries paginated entities with correct query string construction', async () => {
+    const mockPage = {
+      data: [
+        {
+          id: '11111111-1111-1111-1111-111111111111',
+          name: 'Device A',
+          type: 'iot_device',
+          description: 'Sensor',
+          status: 'active',
+          latitude: 10,
+          longitude: 20,
+          created_at: '2026-11-02T00:00:00Z',
+          updated_at: '2026-11-02T00:00:00Z',
+        },
+      ],
+      meta: {
+        limit: 25,
+        next_cursor: 'cursor123',
+        matching_count: 1,
+        status_counts: { active: 1, inactive: 0, maintenance: 0 },
+      },
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(mockPage), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const result = await entitiesApi.query({
+      q: '  Sensor  ',
+      type: 'iot_device',
+      status: 'active',
+      limit: 25,
+      cursor: 'cur0',
+    });
+
+    expect(result).toEqual(mockPage);
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/entities/query?q=Sensor&type=iot_device&status=active&limit=25&cursor=cur0',
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      }
+    );
+  });
+
+  it('queries map markers with bounds and handles 413 limit', async () => {
+    const mockMarkers = [
+      {
+        id: '11111111-1111-1111-1111-111111111111',
+        name: 'Device A',
+        type: 'iot_device',
+        status: 'active',
+        latitude: 10,
+        longitude: 20,
+      },
+    ];
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: mockMarkers }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const result = await entitiesApi.getMapEntities({
+      west: 10,
+      south: -5,
+      east: 30,
+      north: 15,
+      q: 'Device',
+      type: 'iot_device',
+    });
+
+    expect(result).toEqual(mockMarkers);
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/entities/map?west=10&south=-5&east=30&north=15&q=Device&type=iot_device',
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      }
+    );
+
+    // 413 MAP_RESULT_LIMIT
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'MAP_RESULT_LIMIT',
+            message: 'More than 5000 entities match this map view; zoom in to see markers',
+          },
+        }),
+        {
+          status: 413,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+
+    await expect(
+      entitiesApi.getMapEntities({ west: -180, south: -90, east: 180, north: 90 })
+    ).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 413,
+      code: 'MAP_RESULT_LIMIT',
+      message: 'More than 5000 entities match this map view; zoom in to see markers',
+    });
+  });
+
+  it('fetches map extent across all filtered entities', async () => {
+    const mockExtent = {
+      count: 2,
+      bounds: { west: 10, south: -5, east: 25, north: 12 },
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: mockExtent }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const result = await entitiesApi.getMapExtent({ type: 'vehicle', status: 'active' });
+    expect(result).toEqual(mockExtent);
+    expect(fetch).toHaveBeenCalledWith('/api/entities/map/extent?type=vehicle&status=active', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+  });
 });

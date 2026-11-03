@@ -6,7 +6,10 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +27,12 @@ type Store interface {
 	Delete(context.Context, string) error
 }
 
+type entityQueryStore interface {
+	QueryEntities(context.Context, repository.EntityQuery) (repository.EntityPage, error)
+	MapEntities(context.Context, repository.EntityFilters, repository.MapBounds) ([]repository.MapEntity, error)
+	MapEntityExtent(context.Context, repository.EntityFilters) (repository.MapExtent, error)
+}
+
 type API struct {
 	store  Store
 	logger *slog.Logger
@@ -37,12 +46,17 @@ func New(store Store, logger *slog.Logger) *API {
 }
 
 type errorBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Field   string `json:"field,omitempty"`
+	Code    string        `json:"code"`
+	Message string        `json:"message"`
+	Field   string        `json:"field,omitempty"`
+	Details []importIssue `json:"details,omitempty"`
 }
 
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/exports/") || strings.HasPrefix(r.URL.Path, "/api/imports/") {
+		a.exchange(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/attribute-definitions") || strings.HasPrefix(r.URL.Path, "/api/tags") || strings.HasPrefix(r.URL.Path, "/api/categories") || (strings.HasPrefix(r.URL.Path, "/api/entities/") && (strings.HasSuffix(r.URL.Path, "/attributes") || strings.HasSuffix(r.URL.Path, "/tags") || strings.HasSuffix(r.URL.Path, "/categories") || strings.HasSuffix(r.URL.Path, "/activity"))) {
 		a.advanced(w, r)
 		return
@@ -53,6 +67,30 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+		return
+	}
+	if r.URL.Path == "/api/entities/query" {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		a.queryEntities(w, r)
+		return
+	}
+	if r.URL.Path == "/api/entities/map/extent" {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		a.mapEntityExtent(w, r)
+		return
+	}
+	if r.URL.Path == "/api/entities/map" {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		a.mapEntities(w, r)
 		return
 	}
 	if r.URL.Path == "/api/entities" {
@@ -85,6 +123,154 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "Endpoint not found", "")
+}
+
+func (a *API) queryEntities(w http.ResponseWriter, r *http.Request) {
+	values, ok := parseQueryValues(w, r, map[string]bool{"q": true, "type": true, "status": true, "limit": true, "cursor": true})
+	if !ok {
+		return
+	}
+	filters := repository.EntityFilters{Q: values.Get("q"), Type: values.Get("type"), Status: values.Get("status")}
+	limit := 0
+	if raw, exists := values["limit"]; exists {
+		parsed, err := strconv.Atoi(raw[0])
+		if err != nil || parsed == 0 {
+			writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid entity query parameters", "limit")
+			return
+		}
+		limit = parsed
+	}
+	store, ok := a.queryStore(w)
+	if !ok {
+		return
+	}
+	page, err := store.QueryEntities(r.Context(), repository.EntityQuery{EntityFilters: filters, Limit: limit, Cursor: values.Get("cursor")})
+	if errors.Is(err, repository.ErrInvalidQuery) || errors.Is(err, repository.ErrInvalidCursor) {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid entity query parameters", "")
+		return
+	}
+	if err != nil {
+		a.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (a *API) mapEntities(w http.ResponseWriter, r *http.Request) {
+	values, ok := parseQueryValues(w, r, map[string]bool{"q": true, "type": true, "status": true, "west": true, "south": true, "east": true, "north": true})
+	if !ok {
+		return
+	}
+	filters := repository.EntityFilters{Q: values.Get("q"), Type: values.Get("type"), Status: values.Get("status")}
+	bounds, ok := parseMapBounds(w, values)
+	if !ok {
+		return
+	}
+	store, ok := a.queryStore(w)
+	if !ok {
+		return
+	}
+	items, err := store.MapEntities(r.Context(), filters, bounds)
+	if errors.Is(err, repository.ErrInvalidQuery) {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid entity query parameters", "")
+		return
+	}
+	if errors.Is(err, repository.ErrInvalidBounds) {
+		writeError(w, http.StatusBadRequest, "INVALID_BOUNDS", "Map bounds are invalid", "bounds")
+		return
+	}
+	if errors.Is(err, repository.ErrMapResultLimit) {
+		writeError(w, http.StatusRequestEntityTooLarge, "MAP_RESULT_LIMIT", "More than 5000 entities match this map view; zoom in to see markers", "")
+		return
+	}
+	if err != nil {
+		a.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+func (a *API) mapEntityExtent(w http.ResponseWriter, r *http.Request) {
+	values, ok := parseQueryValues(w, r, map[string]bool{"q": true, "type": true, "status": true})
+	if !ok {
+		return
+	}
+	filters := repository.EntityFilters{Q: values.Get("q"), Type: values.Get("type"), Status: values.Get("status")}
+	store, ok := a.queryStore(w)
+	if !ok {
+		return
+	}
+	extent, err := store.MapEntityExtent(r.Context(), filters)
+	if errors.Is(err, repository.ErrInvalidQuery) {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid entity query parameters", "")
+		return
+	}
+	if err != nil {
+		a.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": extent})
+}
+
+func (a *API) queryStore(w http.ResponseWriter) (entityQueryStore, bool) {
+	store, ok := a.store.(entityQueryStore)
+	if !ok {
+		a.internalError(w, errors.New("entity query store unavailable"))
+		return nil, false
+	}
+	return store, true
+}
+
+func parseQueryValues(w http.ResponseWriter, r *http.Request, allowed map[string]bool) (url.Values, bool) {
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid entity query parameters", "")
+		return nil, false
+	}
+	for key, items := range values {
+		if !allowed[key] || len(items) != 1 {
+			writeError(w, http.StatusBadRequest, "INVALID_QUERY", "Invalid entity query parameters", key)
+			return nil, false
+		}
+	}
+	return values, true
+}
+
+func parseMapBounds(w http.ResponseWriter, values url.Values) (repository.MapBounds, bool) {
+	read := func(key string, min, max float64) (float64, bool) {
+		items, ok := values[key]
+		if !ok || len(items) != 1 || items[0] == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_BOUNDS", "Map bounds are invalid", key)
+			return 0, false
+		}
+		value, err := strconv.ParseFloat(items[0], 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < min || value > max {
+			writeError(w, http.StatusBadRequest, "INVALID_BOUNDS", "Map bounds are invalid", key)
+			return 0, false
+		}
+		return value, true
+	}
+	west, ok := read("west", -180, 180)
+	if !ok {
+		return repository.MapBounds{}, false
+	}
+	south, ok := read("south", -90, 90)
+	if !ok {
+		return repository.MapBounds{}, false
+	}
+	east, ok := read("east", -180, 180)
+	if !ok {
+		return repository.MapBounds{}, false
+	}
+	north, ok := read("north", -90, 90)
+	if !ok {
+		return repository.MapBounds{}, false
+	}
+	if south > north {
+		writeError(w, http.StatusBadRequest, "INVALID_BOUNDS", "Map bounds are invalid", "bounds")
+		return repository.MapBounds{}, false
+	}
+	return repository.MapBounds{West: west, South: south, East: east, North: north}, true
 }
 
 func (a *API) list(w http.ResponseWriter, r *http.Request) {
@@ -262,6 +448,13 @@ func methodNotAllowed(w http.ResponseWriter) {
 
 func writeError(w http.ResponseWriter, status int, code, message, field string) {
 	writeJSON(w, status, map[string]any{"error": errorBody{Code: code, Message: message, Field: field}})
+}
+
+func writeImportError(w http.ResponseWriter, status int, code, message string, details []importIssue) {
+	if len(details) > maxImportIssues {
+		details = details[:maxImportIssues]
+	}
+	writeJSON(w, status, map[string]any{"error": errorBody{Code: code, Message: message, Details: details}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
