@@ -1,6 +1,6 @@
 # GeoEntity V2 — Product Roadmap
 
-**Status:** V2.1–V2.5 are completed and locally committed. V2.5 is commit `43ce1a7d51950a6cc0ec79692cc3b779b252340b`. V2.6A–D are complete; V2.6 local QA recorded 0 P0, 0 P1, 3 P2, and 1 P3. Production deployment readiness remains subject to operational verification; see `V2.6_FINAL_GIT_REPORT.md`. V2.7A–D are complete from baseline `9d7871e50f6d59befcffe675054e2d5fb373ef5c` (author `Muhamad Fauzan <vanz66hu@gmail.com>`). Original V2.7C QA returned FAIL; findings were remediated and the responsive discrepancy passed independent re-verification. The original FAIL and prior conflicting screenshot evidence remain historical. V2.7D was finalized in one local commit; V2.8 has not started.
+**Status:** V2.1–V2.5 are completed and locally committed. V2.5 is commit `43ce1a7d51950a6cc0ec79692cc3b779b252340b`. V2.6A–D are complete; V2.6 local QA recorded 0 P0, 0 P1, 3 P2, and 1 P3. Production deployment readiness remains subject to operational verification; see `V2.6_FINAL_GIT_REPORT.md`. V2.7A–D are complete from baseline `9d7871e50f6d59befcffe675054e2d5fb373ef5c` (author `Muhamad Fauzan <vanz66hu@gmail.com>`). Original V2.7C QA returned FAIL; findings were remediated and the responsive discrepancy passed independent re-verification. The original FAIL and prior conflicting screenshot evidence remain historical. V2.7D was finalized in one local commit. V2.8A integration/QA is complete with browser verification explicitly excluded because browser automation was unavailable; V2.8B has not started.
 
 ## Product direction
 
@@ -8,7 +8,7 @@ Evolve the current single-user GeoEntity CRUD map into a spatial asset and IoT o
 
 ## Workspace and current system inventory
 
-The active V2 workspace is `./`, a separate Git repository from the original take-home project at `[LOCAL_PATH_REDACTED] V2.5A verified branch `master`, HEAD `8486b20207b68bcf5bb115b6aa414630f4094442`, and a clean starting worktree. The original take-home directory was not modified.
+The active V2 workspace is `./`, a separate Git repository from the original take-home project at `[LOCAL_PATH_REDACTED]`. V2.5A verified branch `master`, HEAD `8486b20207b68bcf5bb115b6aa414630f4094442`, and a clean starting worktree. The original take-home directory was not modified.
 
 The V2 copy has a local, Git-ignored `backend/data/geoentity.db` with two entity rows, a V1 baseline in `schema_migrations`, and `PRAGMA user_version = 0`. A timestamped backup was independently verified before baseline registration; preserve both data and backup. Neither belongs in Git.
 
@@ -191,9 +191,9 @@ V2.4 phase ordering and authorization boundaries are specified in `V2.4_IMPLEMEN
 
 - **V2.6 — Security & Reliability:** V2.6A–D are complete. Planning is preserved in `V2.6_TECHNICAL_PLAN.md`; implementation, QA, final Git evidence, and operating guidance are in the V2.6 report, handoff, QA, and operations documents. Production deployment readiness remains subject to operational verification.
 - **V2.7 — Essential IoT Monitoring:** V2.7A–D are complete. The original V2.7C FAIL, targeted remediations, and independent responsive re-verification PASS remain recorded without rewriting history. V2.7D created one local commit after final backend/frontend verification. No push, tag, release, or deployment occurred.
-- **V2.8 — Final Integration, QA, and Release Closure:** Run end-to-end regression, demonstrate restore, repeat security/performance checks, finalize deployment/recovery docs, and review release acceptance. Avoid another architecture overhaul.
+- **V2.8 — Final Integration, QA, and Release Closure:** V2.8A automated/isolated integration QA is complete; browser verification was unavailable and is excluded from that verdict. V2.8B follow-up work and release closure require separate authorization. Demonstrate restore, repeat any remaining security/performance checks, and finalize deployment/recovery docs without another architecture overhaul.
 
-**Authorization boundary:** V2.6A–D and V2.7A–D are recorded. The original V2.7C QA failure, remediation, and scoped independent responsive PASS remain in the evidence trail. V2.7D local finalization is complete. Push, tag, release, deployment, and V2.8 work were not authorized by V2.7D and remain separate future work.
+**Authorization boundary:** V2.6A–D and V2.7A–D are recorded. The original V2.7C QA failure, remediation, and scoped independent responsive PASS remain in the evidence trail. V2.7D local finalization and V2.8A QA are complete. V2.8B, push, tag, release, and deployment remain separate future work requiring explicit authorization.
 
 ## V2.7A Planning Closure
 
@@ -210,10 +210,20 @@ V2.4 phase ordering and authorization boundaries are specified in `V2.4_IMPLEMEN
 - [x] Device credential lifecycle CLI, one-time random secrets/hash-at-rest, transactional audit, exact device-authenticated ingestion, transaction-bound credential recheck, idempotency, and transactional entity deletion detachment are implemented.
 - [x] Admin-only bounded devices/latest/history APIs, keyset history pagination, single-process API lock/rate limits, schema-7 backup handling and schema-6 restore compatibility, and monitoring dashboard are implemented.
 - [x] `go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`, frontend tests (29 files/172 tests), and frontend production build passed. One local synthetic 10k benchmark is recorded in the handoff/report.
-- [x] Persistent SQLite database and `[LOCAL_PATH_REDACTED] were not accessed. No files were staged, committed, pushed, tagged, or released.
+- [x] Persistent SQLite database and `[LOCAL_PATH_REDACTED]` were not accessed. No files were staged, committed, pushed, tagged, or released.
 - [x] V2.7C independent QA executed. Verdict FAIL: one P1 entity deletion defect and two P2 findings; details in `V2.7C_QA_REPORT.md`. Browser QA was unavailable, so no browser interaction pass is claimed.
 - [x] V2.7B targeted remediation addresses the three V2.7C findings with regression coverage; see `V2.7B_REMEDIATION_REPORT.md`. The historical V2.7C FAIL report remains unchanged; remediation checks are not a substitute for an independent QA rerun.
 - [x] V2.7C re-test report records all three findings and automated regression gates passing, with Chrome browser QA evidence. Final Git audit found the reported 390×844 screenshot shows navigation overlap/clipping despite the responsive PASS claim; see the audit hold addendum in `V2.7C_RETEST_REPORT.md`.
 - [x] V2.7B targeted responsive remediation reproduced and fixed the 390×844 Sign out/API badge overlap and clipped header navigation. Chrome geometry, visibility, overflow, and click-path checks pass at 390×844, 768×1024, and 1440×900; frontend tests/build pass. Evidence is in `V2.7B_RESPONSIVE_REMEDIATION_REPORT.md`.
 - [x] Independently re-verify the responsive remediation in Chrome at 390×844, 768×1024, and 1440×900, including header geometry, keyboard/pointer operation, monitoring dashboard data, filtering, pagination, empty/loading/error states, and logout. Evidence is appended to `V2.7C_RETEST_REPORT.md`.
-- [x] V2.7D final audit: backend tests/race/vet/build and frontend tests/build passed; diff hygiene passed; only reviewed V2.7 deliverables were staged. The V2.6 parent and corrected author identity were verified, and exactly one local V2.7 commit was created. Persistent database and `[LOCAL_PATH_REDACTED] remained untouched. No push, tag, release, deployment, or V2.8 work occurred; see `V2.7_HANDOFF.md` for details and known limits.
+- [x] V2.7D final audit: backend tests/race/vet/build and frontend tests/build passed; diff hygiene passed; only reviewed V2.7 deliverables were staged. The V2.6 parent and corrected author identity were verified, and exactly one local V2.7 commit was created. Persistent database and `[LOCAL_PATH_REDACTED]` remained untouched. No push, tag, release, deployment, or V2.8 work occurred; see `V2.7_HANDOFF.md` for details and known limits.
+
+## V2.8A Final Integration & QA Closure
+
+- [x] Verified expected baseline `master` at `a00c11c286b93bf3c3a7666320343421496da1d2`, subject `feat: complete GeoEntity V2.7 IoT monitoring`, parent `9d7871e50f6d59befcffe675054e2d5fb373ef5c`, author `Muhamad Fauzan <vanz66hu@gmail.com>`; starting worktree was clean.
+- [x] Backend Go tests, uncached race suite, vet and build passed. Frontend test script passed (29 files/172 tests); TypeScript/Vite production build passed with a non-blocking bundle-size advisory.
+- [x] Existing automated tests passed for auth/session boundaries, entity/device lifecycle and preserved telemetry, input validation/idempotency, latest/history pagination and filters, query indexes, backup/restore schema compatibility, and V2.5 API regressions.
+- [x] Browser automation was unavailable; no V2.8A screenshots or responsive/browser interaction claim is made. Browser scope is explicitly excluded from the PASS verdict. Earlier V2.7 browser reports remain historical evidence.
+- [x] QA found no new P0/P1/P2 defect in the automated and source-review scope. Known single-process SQLite/rate-limit, indefinite-retention, bundle-size, and untested scale/recovery limits are recorded in `V2.8A_QA_REPORT.md`.
+- [x] Only `V2.8A_QA_REPORT.md`, `V2.8_HANDOFF.md`, and this roadmap were changed. No source, tests, dependency, migration, database, or runtime configuration was modified; nothing was staged or committed.
+- [x] Persistent `backend/data/geoentity.db` and `[LOCAL_PATH_REDACTED]` were not accessed. No push, tag, release, deployment, or V2.8B work occurred.
