@@ -100,6 +100,15 @@ export function AttributeDefinitionsModal({
     return () => requestGuard.invalidate();
   }, [isOpen, selectedType, loadDefinitions, requestGuard]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const handleStartCreate = () => {
     setCreateKey('');
     setCreateLabel('');
@@ -215,9 +224,9 @@ export function AttributeDefinitionsModal({
   const activeCount = definitions.filter((d) => !d.archived).length;
 
   return (
-    <div className="modal-backdrop animate-fade-in" onClick={onClose} role="presentation">
+    <div className="modal-overlay animate-fade-in" onClick={onClose} role="presentation">
       <div
-        className="modal-container modal-lg"
+        className="modal-dialog modal-lg attribute-definitions-dialog"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

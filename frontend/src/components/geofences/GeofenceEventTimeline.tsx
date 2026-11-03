@@ -4,6 +4,7 @@ import { geofencesApi } from '../../api/geofences';
 import { ApiError } from '../../api/client';
 import { formatCoordinate, formatDateTime } from '../../utils/formatters';
 import { EnterIcon, ExitIcon, RefreshIcon, AlertIcon, SearchIcon, InfoIcon, ActivityIcon } from '../Icons';
+import { GeofenceEmptyState } from './GeofenceEmptyState';
 
 interface GeofenceEventTimelineProps {
   geofence: GeofenceDefinition;
@@ -212,17 +213,15 @@ export function GeofenceEventTimeline({ geofence, onSelectEntity }: GeofenceEven
 
       {/* Empty State */}
       {!isLoading && !error && events.length === 0 && (
-        <div className="events-empty-state">
-          <div className="empty-icon-wrap">
-            <ActivityIcon size={28} />
-          </div>
-          <h4>No Transition Events</h4>
-          <p>
-            {hasActiveFilters
+        <GeofenceEmptyState
+          icon={<ActivityIcon size={32} />}
+          title="No Transition Events"
+          description={
+            hasActiveFilters
               ? 'No events match the selected filters for this geofence.'
-              : 'No spatial transition events have been recorded for this geofence yet.'}
-          </p>
-        </div>
+              : 'No spatial transition events have been recorded for this geofence yet.'
+          }
+        />
       )}
 
       {/* Events List */}

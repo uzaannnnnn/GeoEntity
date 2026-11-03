@@ -1,4 +1,4 @@
-import { LogoIcon, PlusIcon, RefreshIcon, AttributesIcon, DataExchangeIcon, GeofenceIcon } from './Icons';
+import { LogoIcon, PlusIcon, RefreshIcon, AttributesIcon, DataExchangeIcon, GeofenceIcon, LogOutIcon } from './Icons';
 
 interface HeaderProps {
   totalCount: number;
@@ -161,7 +161,10 @@ export function Header({
 
       <div className="header-session-controls">
         {signOutError && <span className="header-session-error" role="alert">{signOutError}</span>}
-        <button type="button" className="auth-signout" onClick={onSignOut}>Sign out</button>
+        <button type="button" className="auth-signout" onClick={onSignOut}>
+          <LogOutIcon size={16} aria-hidden="true" />
+          <span>SIGN OUT</span>
+        </button>
       </div>
     </header>
   );

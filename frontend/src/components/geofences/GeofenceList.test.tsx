@@ -91,5 +91,6 @@ describe('GeofenceList component', () => {
 
     expect(markup).toContain('No Geofences Created');
     expect(markup).toContain('Create Geofence');
+    expect(markup).toContain('class="geofence-empty-state"');
   });
 });

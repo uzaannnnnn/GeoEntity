@@ -7,6 +7,7 @@ import {
   TrashIcon,
   ActivityIcon,
 } from '../Icons';
+import { GeofenceEmptyState } from './GeofenceEmptyState';
 
 interface GeofenceListProps {
   geofences: GeofenceDefinition[];
@@ -63,20 +64,13 @@ export function GeofenceList({
       )}
 
       {!isLoading && geofences.length === 0 && (
-        <div className="geofences-empty-state">
-          <div className="empty-icon-wrap">
-            <GeofenceIcon size={32} />
-          </div>
-          <h4>No Geofences Created</h4>
-          <p>
-            Create circle or polygon geofences to monitor entity containment and review transition
-            history.
-          </p>
-          <button type="button" className="btn btn-primary" onClick={onCreateClick}>
-            <PlusIcon size={16} />
-            <span>Create Geofence</span>
-          </button>
-        </div>
+        <GeofenceEmptyState
+          icon={<GeofenceIcon size={32} />}
+          title="No Geofences Created"
+          description="Create circle or polygon geofences to monitor entity containment and review transition history."
+          actionLabel="Create Geofence"
+          onAction={onCreateClick}
+        />
       )}
 
       {geofences.length > 0 && (

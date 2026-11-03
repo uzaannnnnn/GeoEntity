@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, FormEvent } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import {
   Entity,
   EntityInput,
@@ -29,6 +29,8 @@ import { GeofenceDefinition } from './types/geofence';
 import { GeofenceManagerModal, GeofenceModalTab } from './components/geofences/GeofenceManagerModal';
 import { authApi } from './api/auth';
 import { MonitoringDashboard } from './components/monitoring/MonitoringDashboard';
+import { appNavigationReducer, initialAppNavigationState } from './utils/appNavigation';
+import { SignInScreen } from './components/auth/SignInScreen';
 
 function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; signOutError: string }) {
   // 1. Paginated Entity List Data Source
@@ -62,14 +64,11 @@ function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; 
   const [isSelectingLocation, setIsSelectingLocation] = useState<boolean>(false);
   const [draftLocation, setDraftLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [centerRequest, setCenterRequest] = useState(0);
-  const [isDefinitionsModalOpen, setIsDefinitionsModalOpen] = useState<boolean>(false);
-  const [isDataExchangeModalOpen, setIsDataExchangeModalOpen] = useState<boolean>(false);
-  const [isGeofencesModalOpen, setIsGeofencesModalOpen] = useState<boolean>(false);
+  const [navigation, dispatchNavigation] = useReducer(appNavigationReducer, initialAppNavigationState);
   const [geofencesModalInitialTab, setGeofencesModalInitialTab] = useState<GeofenceModalTab>('list');
   const [geofences, setGeofences] = useState<GeofenceDefinition[]>([]);
   const [selectedGeofence, setSelectedGeofence] = useState<GeofenceDefinition | null>(null);
   const [isHealthOk, setIsHealthOk] = useState<boolean | null>(null);
-  const [isMonitoringOpen, setIsMonitoringOpen] = useState(false);
 
   // Request race condition guards
   const listRequestGuard = useRef(new RequestGuard()).current;
@@ -607,22 +606,22 @@ function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; 
           }
           checkHealth();
         }}
-        onManageDefinitionsClick={() => setIsDefinitionsModalOpen(true)}
-        onDataExchangeClick={() => setIsDataExchangeModalOpen(true)}
+        onManageDefinitionsClick={() => dispatchNavigation({ type: 'open-overlay', overlay: 'attribute-definitions' })}
+        onDataExchangeClick={() => dispatchNavigation({ type: 'open-overlay', overlay: 'data-operations' })}
         onGeofencesClick={() => {
           setGeofencesModalInitialTab('list');
-          setIsGeofencesModalOpen(true);
+          dispatchNavigation({ type: 'open-overlay', overlay: 'geofences' });
         }}
-        isGeofencesActive={isGeofencesModalOpen}
+        isGeofencesActive={navigation.overlay === 'geofences'}
         geofenceCount={geofences.length}
         onSignOut={onSignOut}
         signOutError={signOutError}
-        onMonitoringClick={() => setIsMonitoringOpen((open) => !open)}
-        isMonitoringActive={isMonitoringOpen}
+        onMonitoringClick={() => dispatchNavigation({ type: 'toggle-monitoring' })}
+        isMonitoringActive={navigation.view === 'monitoring'}
         isCreateActive={sidePanelMode === 'create'}
       />
 
-      {isMonitoringOpen ? <MonitoringDashboard entities={entities} onClose={() => setIsMonitoringOpen(false)} /> : <main className="app-main-layout">
+      {navigation.view === 'monitoring' ? <MonitoringDashboard entities={entities} onClose={() => dispatchNavigation({ type: 'toggle-monitoring' })} /> : <main className="app-main-layout">
         {/* Interactive Leaflet Map is the primary working area */}
         <section className="map-section" aria-label="Geographic Entity Map">
           <MapView
@@ -649,7 +648,7 @@ function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; 
             onViewGeofenceEvents={(gf) => {
               setSelectedGeofence(gf);
               setGeofencesModalInitialTab('events');
-              setIsGeofencesModalOpen(true);
+              dispatchNavigation({ type: 'open-overlay', overlay: 'geofences' });
             }}
           />
         </section>
@@ -692,7 +691,7 @@ function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; 
                   setSelectedGeofence(gf);
                 }
                 setGeofencesModalInitialTab('events');
-                setIsGeofencesModalOpen(true);
+                dispatchNavigation({ type: 'open-overlay', overlay: 'geofences' });
               }}
               onSelectGeofenceOnMap={(geofenceId) => {
                 const gf = geofences.find((g) => g.id === geofenceId);
@@ -749,15 +748,15 @@ function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; 
 
       {/* Attribute Definitions Schema Manager Modal */}
       <AttributeDefinitionsModal
-        isOpen={isDefinitionsModalOpen}
-        onClose={() => setIsDefinitionsModalOpen(false)}
+        isOpen={navigation.overlay === 'attribute-definitions'}
+        onClose={() => dispatchNavigation({ type: 'close-overlay' })}
         onToast={addToast}
       />
 
       {/* Data Operations (CSV / GeoJSON Import & Export) Modal */}
       <DataExchangeModal
-        isOpen={isDataExchangeModalOpen}
-        onClose={() => setIsDataExchangeModalOpen(false)}
+        isOpen={navigation.overlay === 'data-operations'}
+        onClose={() => dispatchNavigation({ type: 'close-overlay' })}
         activeFilters={activeFilters}
         matchingCount={totalCount}
         onImportSuccess={handleImportSuccess}
@@ -765,8 +764,8 @@ function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; 
 
       {/* Geofence Management and Transition Events Modal */}
       <GeofenceManagerModal
-        isOpen={isGeofencesModalOpen}
-        onClose={() => setIsGeofencesModalOpen(false)}
+        isOpen={navigation.overlay === 'geofences'}
+        onClose={() => dispatchNavigation({ type: 'close-overlay' })}
         geofences={geofences}
         selectedGeofence={selectedGeofence}
         onSelectGeofence={setSelectedGeofence}
@@ -789,7 +788,7 @@ function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; 
               longitude: 0,
             });
           }
-          setIsGeofencesModalOpen(false);
+          dispatchNavigation({ type: 'close-overlay' });
         }}
         onToast={addToast}
         initialTab={geofencesModalInitialTab}
@@ -803,25 +802,19 @@ function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; 
 
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState('');
 
   useEffect(() => {
     let mounted = true;
     authApi.session().then((state) => { if (mounted) setAuthenticated(state.authenticated); }).catch(() => { if (mounted) setAuthenticated(false); });
-    const onExpired = () => { setAuthenticated(false); setError('Your session expired. Sign in again.'); };
+    const onExpired = () => {
+      setAuthenticated(false);
+      setSessionMessage('Your session expired. Sign in again.');
+    };
     window.addEventListener('geoentity:auth-required', onExpired);
     return () => { mounted = false; window.removeEventListener('geoentity:auth-required', onExpired); };
   }, []);
-
-  async function signIn(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError('');
-    try { await authApi.login(password); setPassword(''); setAuthenticated(true); }
-    catch { setError('Sign in failed. Check the passphrase and try again.'); }
-    finally { setBusy(false); }
-  }
 
   async function signOut() {
     setSignOutError('');
@@ -829,17 +822,17 @@ export function App() {
     catch { setSignOutError('Sign out failed. Please try again.'); }
   }
 
-  if (authenticated === null) return <main className="auth-screen"><p>Checking session…</p></main>;
+  if (authenticated === null) {
+    return <main className="auth-screen"><p className="auth-loading-card">Checking your session…</p></main>;
+  }
   if (!authenticated) return (
-    <main className="auth-screen">
-      <form className="auth-card" onSubmit={signIn}>
-        <h1>GeoEntity</h1><p>Sign in to manage your data.</p>
-        <label htmlFor="admin-passphrase">Administrator passphrase</label>
-        <input id="admin-passphrase" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
-        {error && <p className="auth-error" role="alert">{error}</p>}
-        <button type="submit" disabled={busy || password.length === 0}>{busy ? 'Signing in…' : 'Sign in'}</button>
-      </form>
-    </main>
+    <SignInScreen
+      initialMessage={sessionMessage}
+      onSignIn={async (passphrase) => {
+        await authApi.login(passphrase);
+        setAuthenticated(true);
+      }}
+    />
   );
   return <AuthenticatedApp onSignOut={signOut} signOutError={signOutError} />;
 }

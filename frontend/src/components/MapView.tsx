@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L, { LatLngExpression } from 'leaflet';
 import { Entity, MapBoundsParams } from '../types/entity';
 import { getMapTileConfig } from '../utils/mapConfig';
@@ -17,6 +17,32 @@ import { MapLegend } from './map/MapLegend';
 import { CoordinateInspector } from './map/CoordinateInspector';
 import { AlertIcon } from './Icons';
 import { updateMapCenter } from '../utils/mapCenter';
+import { createCoalescedFrameTask } from '../utils/coalescedFrameTask';
+
+function MapSizeObserver() {
+  const map = useMap();
+
+  useEffect(() => {
+    const resizeTask = createCoalescedFrameTask(() => {
+      map.invalidateSize({ pan: false, debounceMoveend: true });
+    });
+    const container = map.getContainer();
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => resizeTask.request());
+    observer?.observe(container);
+    window.addEventListener('resize', resizeTask.request);
+    resizeTask.request();
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', resizeTask.request);
+      resizeTask.cancel();
+    };
+  }, [map]);
+
+  return null;
+}
 
 // Map event listener for location picking clicks
 function MapEvents({
@@ -198,17 +224,37 @@ export function MapView({
 
   return (
     <div className={`map-wrapper ${isSelectingLocation ? 'picking-location' : ''}`}>
-      {/* Location Picker Banner */}
-      {isSelectingLocation && (
-        <div className="map-picking-banner animate-fade-in">
-          <div className="banner-content">
-            <span className="banner-pulse-dot" />
-            <span className="banner-text">
-              <strong>Location Picker Active:</strong> Click anywhere on the map to set coordinates.
-            </span>
+      <div className="map-top-controls">
+        {/* Location Picker Banner */}
+        {isSelectingLocation && (
+          <div className="map-picking-banner animate-fade-in" role="status">
+            <div className="banner-content">
+              <span className="banner-pulse-dot" aria-hidden="true" />
+              <span className="banner-text">
+                <strong>Location Picker Active:</strong> Click anywhere on the map to set coordinates.
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Advanced Map Controls Toolbar */}
+        <MapToolbar
+          validPointsCount={matchingCount}
+          isLocating={isLocating}
+          geolocationError={geolocationError}
+          toolbarMessage={toolbarMessage}
+          isLegendOpen={isLegendOpen}
+          isInspectorOpen={isInspectorOpen}
+          onFitAll={handleFitAll}
+          onLocateMe={handleLocateMe}
+          onToggleLegend={() => setIsLegendOpen((prev) => !prev)}
+          onToggleInspector={() => setIsInspectorOpen((prev) => !prev)}
+          onDismissMessage={() => {
+            setGeolocationError(null);
+            setToolbarMessage(null);
+          }}
+        />
+      </div>
 
       {/* HTTP 413 Map Result Limit Warning Banner */}
       {mapLimitExceeded && (
@@ -237,24 +283,6 @@ export function MapView({
         </div>
       )}
 
-      {/* Advanced Map Controls Toolbar (Top Right) */}
-      <MapToolbar
-        validPointsCount={matchingCount}
-        isLocating={isLocating}
-        geolocationError={geolocationError}
-        toolbarMessage={toolbarMessage}
-        isLegendOpen={isLegendOpen}
-        isInspectorOpen={isInspectorOpen}
-        onFitAll={handleFitAll}
-        onLocateMe={handleLocateMe}
-        onToggleLegend={() => setIsLegendOpen((prev) => !prev)}
-        onToggleInspector={() => setIsInspectorOpen((prev) => !prev)}
-        onDismissMessage={() => {
-          setGeolocationError(null);
-          setToolbarMessage(null);
-        }}
-      />
-
       {/* Collapsible Visual Legend Panel */}
       <MapLegend isOpen={isLegendOpen} onClose={() => setIsLegendOpen(false)} />
 
@@ -272,6 +300,7 @@ export function MapView({
         scrollWheelZoom={true}
         className="leaflet-map-container"
       >
+        <MapSizeObserver />
         <TileLayer
           attribution={tileConfig.attribution}
           url={tileConfig.url}

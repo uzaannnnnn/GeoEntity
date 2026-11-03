@@ -5,6 +5,7 @@ import { ApiError } from '../../api/client';
 import { GeofenceList } from './GeofenceList';
 import { GeofenceForm } from './GeofenceForm';
 import { GeofenceEventTimeline } from './GeofenceEventTimeline';
+import { GeofenceEmptyState } from './GeofenceEmptyState';
 import {
   GeofenceIcon,
   ActivityIcon,
@@ -301,21 +302,13 @@ export function GeofenceManagerModal({
                   }}
                 />
               ) : (
-                <div className="geofences-empty-state">
-                  <div className="empty-icon-wrap">
-                    <ActivityIcon size={32} />
-                  </div>
-                  <h4>No Geofences Available</h4>
-                  <p>Create a geofence first to record and inspect transition events.</p>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => setActiveTab('create')}
-                  >
-                    <PlusIcon size={16} />
-                    <span>Create Geofence</span>
-                  </button>
-                </div>
+                <GeofenceEmptyState
+                  icon={<ActivityIcon size={32} />}
+                  title="No Geofences Available"
+                  description="Create a geofence first to record and inspect transition events."
+                  actionLabel="Create Geofence"
+                  onAction={() => setActiveTab('create')}
+                />
               )}
             </div>
           )}

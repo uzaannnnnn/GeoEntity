@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { GeofenceDefinition, GeofenceGeometry, GeofenceInput } from '../../types/geofence';
 import { ApiError } from '../../api/client';
 import { AlertIcon, CrosshairIcon } from '../Icons';
+import { validateGeofenceGeometry } from '../../utils/geofenceFormValidation';
 
 interface GeofenceFormProps {
   initialGeofence?: GeofenceDefinition | null;
@@ -80,74 +81,15 @@ export function GeofenceForm({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const validateForm = (): GeofenceGeometry | null => {
-    const errs: { [key: string]: string } = {};
-
-    if (!name.trim()) {
-      errs.name = 'Geofence name is required (1 to 100 characters).';
-    } else if (name.trim().length > 100) {
-      errs.name = 'Geofence name cannot exceed 100 characters.';
-    }
-
-    if (geomType === 'Circle') {
-      const lat = parseFloat(circleLat);
-      const lon = parseFloat(circleLon);
-      const rad = parseFloat(circleRadius);
-
-      if (isNaN(lat) || lat < -90 || lat > 90) {
-        errs.circleLat = 'Latitude must be a valid number between -90 and 90.';
-      }
-      if (isNaN(lon) || lon < -180 || lon > 180) {
-        errs.circleLon = 'Longitude must be a valid number between -180 and 180.';
-      }
-      if (isNaN(rad) || rad <= 0 || rad > 10000000) {
-        errs.circleRadius = 'Radius must be a positive number up to 10,000,000 meters.';
-      }
-
-      if (Object.keys(errs).length > 0) {
-        setErrors(errs);
-        return null;
-      }
-
-      setErrors({});
-      return {
-        type: 'Circle',
-        center: [lon, lat], // [longitude, latitude]
-        radius_m: rad,
-      };
-    } else {
-      // Polygon validation
-      try {
-        const parsed = JSON.parse(polyCoordsJson);
-        if (!Array.isArray(parsed) || parsed.length === 0 || !Array.isArray(parsed[0])) {
-          errs.polygon = 'Coordinates must be an array containing an exterior ring of [lon, lat] points.';
-        } else {
-          const ring = parsed[0];
-          if (ring.length < 4) {
-            errs.polygon = 'Exterior ring must have at least 4 positions (minimum 3 distinct vertices plus closed end).';
-          } else {
-            const first = ring[0];
-            const last = ring[ring.length - 1];
-            if (first[0] !== last[0] || first[1] !== last[1]) {
-              errs.polygon = 'Exterior ring must be closed (first and last positions must be identical).';
-            }
-          }
-        }
-        if (Object.keys(errs).length > 0) {
-          setErrors(errs);
-          return null;
-        }
-
-        setErrors({});
-        return {
-          type: 'Polygon',
-          coordinates: parsed,
-        };
-      } catch (e) {
-        errs.polygon = 'Invalid JSON syntax for polygon coordinates.';
-        setErrors(errs);
-        return null;
-      }
-    }
+    const result = validateGeofenceGeometry(geomType, {
+      name,
+      circleLat,
+      circleLon,
+      circleRadius,
+      polyCoordsJson,
+    });
+    setErrors(result.errors);
+    return result.geometry;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -213,25 +155,25 @@ export function GeofenceForm({
         <input
           id="geofence-name"
           type="text"
-          className={`form-control ${errors.name ? 'is-invalid' : ''}`}
+          className={`form-input ${errors.name ? 'input-error' : ''}`}
           placeholder="e.g. Central Warehouse Perimeter"
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={100}
           required
         />
-        {errors.name && <span className="field-error">{errors.name}</span>}
+        {errors.name && <span className="field-error-msg">{errors.name}</span>}
       </div>
 
       {/* Enabled Toggle */}
       <div className="form-group">
-        <label className="checkbox-label">
+        <label className="checkbox-toggle-label geofence-enabled-toggle">
           <input
             type="checkbox"
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
           />
-          <span className="checkbox-text">
+          <span className="geofence-checkbox-text">
             <strong>Enable Geofence</strong> — Actively evaluate containment on entity coordinate updates
           </span>
         </label>
@@ -254,7 +196,7 @@ export function GeofenceForm({
             aria-checked={geomType === 'Circle'}
           >
             <strong>Circle</strong>
-            <span className="option-desc">Center point and radius in meters</span>
+            <span className="geom-type-desc">Center point and radius in meters</span>
           </button>
           <button
             type="button"
@@ -264,7 +206,7 @@ export function GeofenceForm({
             aria-checked={geomType === 'Polygon'}
           >
             <strong>Polygon</strong>
-            <span className="option-desc">Closed exterior ring of coordinates</span>
+            <span className="geom-type-desc">Closed exterior ring of coordinates</span>
           </button>
         </div>
       </div>
@@ -272,7 +214,7 @@ export function GeofenceForm({
       {/* Circle Parameters */}
       {geomType === 'Circle' && (
         <div className="circle-fields-container">
-          <div className="fields-grid-2">
+          <div className="coord-inputs-row">
             <div className="form-group">
               <label htmlFor="circle-lat" className="form-label required">
                 Center Latitude (&deg;)
@@ -281,12 +223,12 @@ export function GeofenceForm({
                 id="circle-lat"
                 type="number"
                 step="any"
-                className={`form-control ${errors.circleLat ? 'is-invalid' : ''}`}
+                className={`form-input ${errors.circleLat ? 'input-error' : ''}`}
                 value={circleLat}
                 onChange={(e) => setCircleLat(e.target.value)}
                 required
               />
-              {errors.circleLat && <span className="field-error">{errors.circleLat}</span>}
+              {errors.circleLat && <span className="field-error-msg">{errors.circleLat}</span>}
             </div>
 
             <div className="form-group">
@@ -297,17 +239,17 @@ export function GeofenceForm({
                 id="circle-lon"
                 type="number"
                 step="any"
-                className={`form-control ${errors.circleLon ? 'is-invalid' : ''}`}
+                className={`form-input ${errors.circleLon ? 'input-error' : ''}`}
                 value={circleLon}
                 onChange={(e) => setCircleLon(e.target.value)}
                 required
               />
-              {errors.circleLon && <span className="field-error">{errors.circleLon}</span>}
+              {errors.circleLon && <span className="field-error-msg">{errors.circleLon}</span>}
             </div>
           </div>
 
           <div className="form-group">
-            <div className="radius-label-row">
+            <div className="geofence-radius-label-row">
               <label htmlFor="circle-radius" className="form-label required">
                 Radius (meters)
               </label>
@@ -329,12 +271,12 @@ export function GeofenceForm({
               step="any"
               min="0.1"
               max="10000000"
-              className={`form-control ${errors.circleRadius ? 'is-invalid' : ''}`}
+              className={`form-input ${errors.circleRadius ? 'input-error' : ''}`}
               value={circleRadius}
               onChange={(e) => setCircleRadius(e.target.value)}
               required
             />
-            {errors.circleRadius && <span className="field-error">{errors.circleRadius}</span>}
+            {errors.circleRadius && <span className="field-error-msg">{errors.circleRadius}</span>}
           </div>
         </div>
       )}
@@ -349,16 +291,18 @@ export function GeofenceForm({
             <textarea
               id="polygon-coords"
               rows={6}
-              className={`form-control font-mono ${errors.polygon ? 'is-invalid' : ''}`}
+              className={`form-textarea geofence-polygon-input ${errors.polygon ? 'input-error' : ''}`}
               value={polyCoordsJson}
               onChange={(e) => setPolyCoordsJson(e.target.value)}
               required
             />
-            <span className="field-hint">
+            {errors.polygon && (
+              <span className="field-error-msg geofence-polygon-error">{errors.polygon}</span>
+            )}
+            <span className="geofence-field-hint">
               Exterior ring must be closed (first coordinate equals last) with at least 3 distinct
               vertices. Maximum 256 vertices.
             </span>
-            {errors.polygon && <span className="field-error">{errors.polygon}</span>}
           </div>
         </div>
       )}

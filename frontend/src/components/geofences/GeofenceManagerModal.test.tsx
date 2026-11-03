@@ -52,4 +52,21 @@ describe('GeofenceManagerModal component', () => {
 
     expect(markup).toBe('');
   });
+
+  it('uses the shared Geofence empty state when Event History has no fences', () => {
+    const markup = renderToStaticMarkup(
+      <GeofenceManagerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        geofences={[]}
+        selectedGeofence={null}
+        onSelectGeofence={vi.fn()}
+        onRefreshGeofences={vi.fn().mockResolvedValue(undefined)}
+        initialTab="events"
+      />
+    );
+
+    expect(markup).toContain('class="geofence-empty-state"');
+    expect(markup).toContain('No Geofences Available');
+  });
 });

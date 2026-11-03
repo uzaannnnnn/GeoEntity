@@ -1,6 +1,16 @@
 import { API_BASE_URL, getCSRFToken, setCSRFToken } from './client';
 
 export type SessionState = { authenticated: boolean; csrfToken?: string };
+
+export type AuthLoginFailureKind = 'invalid-passphrase' | 'rate-limited' | 'network' | 'service';
+
+export class AuthLoginError extends Error {
+  constructor(readonly kind: AuthLoginFailureKind) {
+    super(kind);
+    this.name = 'AuthLoginError';
+  }
+}
+
 let sessionFlight: Promise<SessionState> | null = null;
 export const authApi = {
   async session(): Promise<SessionState> {
@@ -15,13 +25,26 @@ export const authApi = {
     try { return await sessionFlight; } finally { sessionFlight = null; }
   },
   async login(password: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ password }),
-    });
-    if (!response.ok) throw new Error('Sign in failed. Check the passphrase and try again.');
-    const state = (await response.json()) as SessionState;
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+    } catch {
+      throw new AuthLoginError('network');
+    }
+    if (response.status === 401) throw new AuthLoginError('invalid-passphrase');
+    if (response.status === 429) throw new AuthLoginError('rate-limited');
+    if (!response.ok) throw new AuthLoginError('service');
+
+    let state: SessionState;
+    try {
+      state = (await response.json()) as SessionState;
+    } catch {
+      throw new AuthLoginError('service');
+    }
     setCSRFToken(state.csrfToken || null);
   },
   async logout(): Promise<void> {
