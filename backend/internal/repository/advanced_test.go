@@ -40,7 +40,7 @@ func TestV22RowsSurviveAdvancedMigrationAndRerun(t *testing.T) {
 	if got := entitySnapshot(t, db); len(got) != 1 || got[0] != before[0] {
 		t.Fatalf("entity changed: before=%v after=%v", before, got)
 	}
-	if got := ledgerVersions(t, db); len(got) != 6 || got[1] != 2 || got[2] != 3 || got[3] != 4 || got[4] != 5 || got[5] != 6 {
+	if got := ledgerVersions(t, db); len(got) != 7 || got[1] != 2 || got[2] != 3 || got[3] != 4 || got[4] != 5 || got[5] != 6 || got[6] != 7 {
 		t.Fatalf("ledger=%v", got)
 	}
 	if err := Migrate(ctx, db); err != nil {
@@ -130,7 +130,7 @@ func TestV23MetadataAndActivitySurviveSearchMigration(t *testing.T) {
 	if err := Migrate(ctx, db); err != nil {
 		t.Fatalf("repeat migration: %v", err)
 	}
-	if got := ledgerVersions(t, db); len(got) != 6 || got[2] != 3 || got[3] != 4 || got[4] != 5 || got[5] != 6 {
+	if got := ledgerVersions(t, db); len(got) != 7 || got[2] != 3 || got[3] != 4 || got[4] != 5 || got[5] != 6 || got[6] != 7 {
 		t.Fatalf("migration ledger=%v", got)
 	}
 }

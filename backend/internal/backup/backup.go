@@ -39,6 +39,10 @@ func Create(ctx context.Context, db *sql.DB, directory string, keep int) (Manife
 	if keep < 1 {
 		keep = 10
 	}
+	schemaVersion, err := databaseSchemaVersion(ctx, db)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("read database schema version: %w", err)
+	}
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return Manifest{}, err
 	}
@@ -81,7 +85,7 @@ func Create(ctx context.Context, db *sql.DB, directory string, keep int) (Manife
 		_ = d.Sync()
 		_ = d.Close()
 	}
-	m := Manifest{FormatVersion: 1, Application: "GeoEntity", CreatedAt: now.Format(time.RFC3339Nano), SchemaVersion: 6, DatabaseFile: name, SizeBytes: size, SHA256: checksum}
+	m := Manifest{FormatVersion: 1, Application: "GeoEntity", CreatedAt: now.Format(time.RFC3339Nano), SchemaVersion: schemaVersion, DatabaseFile: name, SizeBytes: size, SHA256: checksum}
 	if err = writeManifest(filepath.Join(directory, name+".manifest.json"), m); err != nil {
 		_ = os.Remove(final)
 		return Manifest{}, err
@@ -142,8 +146,12 @@ func Verify(ctx context.Context, manifestPath string) (Manifest, error) {
 	if size != m.SizeBytes || sum != m.SHA256 {
 		return m, errors.New("backup checksum or size mismatch")
 	}
-	if err = verifyFile(ctx, dbPath); err != nil {
+	actualSchemaVersion, err := verifyFileSchema(ctx, dbPath)
+	if err != nil {
 		return m, err
+	}
+	if m.SchemaVersion != actualSchemaVersion {
+		return m, fmt.Errorf("backup manifest schema version %d does not match database schema version %d", m.SchemaVersion, actualSchemaVersion)
 	}
 	return m, nil
 }
@@ -392,59 +400,83 @@ func fileURI(path string) string {
 }
 
 func verifyFile(ctx context.Context, path string) error {
+	_, err := verifyFileSchema(ctx, path)
+	return err
+}
+
+func databaseSchemaVersion(ctx context.Context, db *sql.DB) (int, error) {
+	if db == nil {
+		return 0, errors.New("database is required")
+	}
+	var version int
+	if err := db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil {
+		return 0, err
+	}
+	if _, err := repository.VerifyMigrationLedgerVersion(ctx, db, version); err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+func verifyFileSchema(ctx context.Context, path string) (int, error) {
 	db, err := sql.Open("sqlite", fileURI(path)+"?mode=ro")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(1)
 	rows, err := db.QueryContext(ctx, `PRAGMA integrity_check`)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	integrity := []string{}
 	for rows.Next() {
 		var s string
 		if err = rows.Scan(&s); err != nil {
 			rows.Close()
-			return err
+			return 0, err
 		}
 		integrity = append(integrity, s)
 	}
 	if err = rows.Err(); err != nil {
 		rows.Close()
-		return err
+		return 0, err
 	}
 	rows.Close()
 	if len(integrity) != 1 || integrity[0] != "ok" {
-		return fmt.Errorf("SQLite integrity_check failed: %v", integrity)
+		return 0, fmt.Errorf("SQLite integrity_check failed: %v", integrity)
 	}
 	rows, err = db.QueryContext(ctx, `PRAGMA foreign_key_check`)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	hasFK := rows.Next()
 	rowErr := rows.Err()
 	rows.Close()
 	if rowErr != nil {
-		return rowErr
+		return 0, rowErr
 	}
 	if hasFK {
-		return errors.New("SQLite foreign_key_check found a violation")
+		return 0, errors.New("SQLite foreign_key_check found a violation")
 	}
-	if _, err = repository.VerifyMigrationLedger(ctx, db); err != nil {
-		return err
+	schemaVersion, err := databaseSchemaVersion(ctx, db)
+	if err != nil {
+		return 0, err
 	}
-	for _, name := range []string{"admin_audit_events_no_update", "admin_audit_events_no_delete", "geofence_events_no_update", "geofence_events_no_delete"} {
+	triggerNames := []string{"admin_audit_events_no_update", "admin_audit_events_no_delete", "geofence_events_no_update", "geofence_events_no_delete"}
+	if schemaVersion >= 7 {
+		triggerNames = append(triggerNames, "device_sensors_no_update", "device_sensors_no_delete", "sensor_observations_validate_insert", "sensor_observations_no_update", "sensor_observations_no_delete")
+	}
+	for _, name := range triggerNames {
 		var n int
 		if err = db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name=?`, name).Scan(&n); err != nil {
-			return err
+			return 0, err
 		}
 		if n != 1 {
-			return fmt.Errorf("required immutable trigger %s is missing", name)
+			return 0, fmt.Errorf("required immutable trigger %s is missing", name)
 		}
 	}
-	return nil
+	return schemaVersion, nil
 }
 func fileDigest(path string) (int64, string, error) {
 	f, err := os.Open(path)
@@ -495,7 +527,7 @@ func readManifest(path string) (Manifest, error) {
 	if err = json.Unmarshal(b, &m); err != nil {
 		return m, err
 	}
-	if m.FormatVersion != 1 || m.Application != "GeoEntity" || m.SchemaVersion != 6 || filepath.Base(m.DatabaseFile) != m.DatabaseFile || !strings.HasSuffix(m.DatabaseFile, ".sqlite") || m.SizeBytes <= 0 || len(m.SHA256) != 64 {
+	if m.FormatVersion != 1 || m.Application != "GeoEntity" || (m.SchemaVersion != 6 && m.SchemaVersion != 7) || filepath.Base(m.DatabaseFile) != m.DatabaseFile || !strings.HasSuffix(m.DatabaseFile, ".sqlite") || m.SizeBytes <= 0 || len(m.SHA256) != 64 {
 		return m, errors.New("invalid backup manifest")
 	}
 	return m, nil

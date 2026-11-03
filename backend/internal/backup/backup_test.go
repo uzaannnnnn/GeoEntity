@@ -49,6 +49,9 @@ func TestOnlineBackupWALRestoreRevokesSessionsAndPreservesRollback(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if manifest.SchemaVersion != 7 {
+		t.Fatalf("schema-7 backup manifest version=%d", manifest.SchemaVersion)
+	}
 	manifestPath := filepath.Join(backupDir, manifest.DatabaseFile+".manifest.json")
 	if st, err := os.Stat(backupDir); err != nil || st.Mode().Perm() != 0o700 {
 		t.Fatalf("backup directory mode=%v err=%v", st, err)
@@ -94,6 +97,115 @@ func TestOnlineBackupWALRestoreRevokesSessionsAndPreservesRollback(t *testing.T)
 	}
 	if _, err = Verify(ctx, manifestPath); err != nil {
 		t.Fatalf("published backup no longer verifies: %v", err)
+	}
+}
+
+func TestBackupRejectsManifestSchemaMismatchInBothDirections(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := repository.Open(ctx, filepath.Join(root, "source-v7.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupDir := filepath.Join(root, "v7-backups")
+	m, err := Create(ctx, store.DB(), backupDir, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(backupDir, m.DatabaseFile+".manifest.json")
+	wrong := m
+	wrong.SchemaVersion = 6
+	wrongManifest := filepath.Join(backupDir, "schema7-manifest-says6.manifest.json")
+	if err = writeManifest(wrongManifest, wrong); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Verify(ctx, wrongManifest); err == nil || !strings.Contains(err.Error(), "manifest schema version 6 does not match database schema version 7") {
+		t.Fatalf("schema-7/schema-6 mismatch error=%v", err)
+	}
+	// Restore must reject a mismatched manifest before changing an existing target.
+	targetPath := filepath.Join(root, "target.db")
+	target, err := repository.Open(ctx, targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := entity.Entity{ID: "10000000-0000-4000-8000-000000000098", Name: "Preserve target", Type: "facility", Status: "active", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	if err = target.Create(ctx, marker); err != nil {
+		t.Fatal(err)
+	}
+	if err = target.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = Restore(ctx, targetPath, wrongManifest); err == nil {
+		t.Fatal("restore accepted schema-mismatched manifest")
+	}
+	target, err = repository.Open(ctx, targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = target.Get(ctx, marker.ID); err != nil {
+		t.Fatalf("mismatched restore changed original target: %v", err)
+	}
+	_ = target.Close()
+
+	// Make an isolated schema-6 database by removing only migration-7 objects.
+	sixPath := filepath.Join(root, "source-v6.db")
+	six, err := repository.Open(ctx, sixPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{`DROP TRIGGER sensor_observations_no_update`, `DROP TRIGGER sensor_observations_no_delete`, `DROP TRIGGER device_sensors_no_update`, `DROP TRIGGER device_sensors_no_delete`, `DROP TRIGGER sensor_observations_validate_insert`, `DROP TABLE sensor_observations`, `DROP TABLE device_sensors`, `DROP TABLE device_credentials`, `DROP TABLE devices`, `DELETE FROM schema_migrations WHERE version=7`} {
+		if _, err = six.DB().Exec(stmt); err != nil {
+			t.Fatalf("make isolated schema-6 fixture (%s): %v", stmt, err)
+		}
+	}
+	sixDir := filepath.Join(root, "v6-backups")
+	if err = os.MkdirAll(sixDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sixFile := filepath.Join(sixDir, "schema6.sqlite")
+	if err = onlineBackup(ctx, six.DB(), sixFile); err != nil {
+		t.Fatal(err)
+	}
+	_ = six.Close()
+	size, sum, err := fileDigest(sixFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sixManifest := Manifest{FormatVersion: 1, Application: "GeoEntity", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), SchemaVersion: 7, DatabaseFile: filepath.Base(sixFile), SizeBytes: size, SHA256: sum}
+	sixManifestPath := filepath.Join(sixDir, "schema6-manifest-says7.manifest.json")
+	if err = writeManifest(sixManifestPath, sixManifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Verify(ctx, sixManifestPath); err == nil || !strings.Contains(err.Error(), "manifest schema version 7 does not match database schema version 6") {
+		t.Fatalf("schema-6/schema-7 mismatch error=%v", err)
+	}
+	if _, err = Verify(ctx, manifestPath); err != nil {
+		t.Fatalf("valid schema-7 backup failed after mismatch checks: %v", err)
+	}
+}
+
+func TestBackupRejectsInvalidManifestSchemaMetadata(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := repository.Open(ctx, filepath.Join(root, "source.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := Create(ctx, store.DB(), filepath.Join(root, "backups"), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = store.Close()
+	m.SchemaVersion = 5
+	path := filepath.Join(root, "invalid-schema-manifest.json")
+	if err = writeManifest(path, m); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Verify(ctx, path); err == nil || !strings.Contains(err.Error(), "invalid backup manifest") {
+		t.Fatalf("invalid manifest schema metadata error=%v", err)
 	}
 }
 
@@ -205,7 +317,7 @@ func TestOnlineBackupUsesSQLiteDriverAPI(t *testing.T) {
 	}
 	defer db.Close()
 	var version int
-	if err = db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 6 {
+	if err = db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 7 {
 		t.Fatalf("copied schema version=%d err=%v", version, err)
 	}
 }
@@ -255,6 +367,55 @@ func TestDriverBackupMinimalTemporarySQLite(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestV26Schema6BackupManifestVerifiesAndRestores(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "v26.sqlite")
+	store, err := repository.Open(ctx, sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{`DROP TRIGGER sensor_observations_no_update`, `DROP TRIGGER sensor_observations_no_delete`, `DROP TRIGGER device_sensors_no_update`, `DROP TRIGGER device_sensors_no_delete`, `DROP TABLE sensor_observations`, `DROP TABLE device_sensors`, `DROP TABLE device_credentials`, `DROP TABLE devices`, `DELETE FROM schema_migrations WHERE version=7`} {
+		if _, err = store.DB().Exec(stmt); err != nil {
+			t.Fatalf("make isolated V2.6 fixture (%s): %v", stmt, err)
+		}
+	}
+	backupDir := filepath.Join(root, "backups")
+	if err = os.MkdirAll(backupDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	name := "v26.sqlite"
+	dbFile := filepath.Join(backupDir, name)
+	if err = onlineBackup(ctx, store.DB(), dbFile); err != nil {
+		t.Fatal(err)
+	}
+	_ = store.Close()
+	size, sum, err := fileDigest(dbFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := Manifest{FormatVersion: 1, Application: "GeoEntity", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), SchemaVersion: 6, DatabaseFile: name, SizeBytes: size, SHA256: sum}
+	manifestPath := dbFile + ".manifest.json"
+	if err = writeManifest(manifestPath, m); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Verify(ctx, manifestPath); err != nil {
+		t.Fatalf("V2.6 manifest verify: %v", err)
+	}
+	target := filepath.Join(root, "restored.sqlite")
+	if err = Restore(ctx, target, manifestPath); err != nil {
+		t.Fatalf("V2.6 backup restore: %v", err)
+	}
+	restored, err := repository.Open(ctx, target)
+	if err != nil {
+		t.Fatalf("V2.6 restore did not migrate forward: %v", err)
+	}
+	defer restored.Close()
+	if version, err := repository.VerifyMigrationLedger(ctx, restored.DB()); err != nil || version != 7 {
+		t.Fatalf("restored schema version=%d err=%v", version, err)
 	}
 }
 

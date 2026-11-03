@@ -332,6 +332,11 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// This one exact route owns its independent device bearer authentication.
+		if r.URL.Path == "/api/device/v1/observations" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if r.URL.Path == "/api/auth/login" {
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -1783,6 +1783,28 @@
 
 /* Responsive adjustments */
 @media (max-width: 900px) {
+  .app-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    justify-content: initial;
+    gap: 8px 12px;
+    height: auto;
+    min-height: 60px;
+    padding: 8px 20px;
+  }
+
+  .header-brand { grid-column: 1; grid-row: 1; min-width: 0; }
+
+  .header-stats { grid-column: 2; grid-row: 1; }
+
+  .header-actions {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    min-width: 0;
+    gap: 8px;
+  }
+
   .app-main-layout {
     flex-direction: column-reverse;
   }
@@ -4367,6 +4389,32 @@
 .auth-card button, .auth-signout { min-height: 40px; padding: 8px 16px; border: 0; border-radius: 7px; background: #175cd3; color: white; font-weight: 600; cursor: pointer; }
 .auth-card button:disabled { opacity: .6; cursor: wait; }
 .auth-error { color: #b42318; }
-.auth-session-controls { position: fixed; top: 12px; right: 16px; z-index: 1200; display: flex; align-items: center; gap: 10px; }
-.auth-session-controls [role="alert"] { color: #b42318; background: #fff; padding: 6px 8px; border-radius: 5px; }
+.header-session-controls { position: static; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.header-session-error { color: #b42318; background: #fff; padding: 6px 8px; border-radius: 5px; }
 .auth-signout { position: static; min-height: 34px; padding: 6px 12px; }
+
+.monitoring-dashboard { padding: 24px; overflow: auto; }
+.monitoring-dashboard > header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
+.monitoring-dashboard h2,.monitoring-dashboard h3,.monitoring-dashboard h4 { margin: 0 0 12px; }
+.monitoring-dashboard label { display:inline-flex; flex-direction:column; gap:6px; margin: 0 12px 14px 0; font-weight:600; }
+.monitoring-dashboard input,.monitoring-dashboard select { min-height:38px; padding:6px 9px; border:1px solid #b9c3d0; border-radius:6px; }
+.monitoring-dashboard form { display:flex; flex-wrap:wrap; align-items:end; gap:8px; margin:14px 0; }
+.monitoring-dashboard button { min-height:36px; padding:6px 12px; border:1px solid #b9c3d0; border-radius:6px; background:#fff; cursor:pointer; }
+.monitoring-table-wrap { overflow-x:auto; }
+.monitoring-dashboard table { width:100%; border-collapse:collapse; }
+.monitoring-dashboard th,.monitoring-dashboard td { padding:10px; text-align:left; border-bottom:1px solid #e2e7ee; }
+@media(max-width:640px) { .monitoring-dashboard { padding:14px; } .monitoring-dashboard form { align-items:stretch; flex-direction:column; } .monitoring-dashboard label { margin-right:0; } }
+
+@media (max-width: 900px) {
+  .header-session-controls { position: static; grid-column: 3; grid-row: 1; justify-self: end; }
+}
+
+@media (max-width: 480px) {
+  .app-header { grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 8px; padding: 8px 12px; }
+  .header-brand { gap: 8px; }
+  .header-logo-badge { width: 34px; height: 34px; }
+  .header-tagline { display: none; }
+  .stat-pill { gap: 5px; padding: 3px 7px; }
+  .auth-signout { padding: 6px 9px; }
+  .header-actions .btn { padding: 7px 9px; font-size: 0.8125rem; }
+}

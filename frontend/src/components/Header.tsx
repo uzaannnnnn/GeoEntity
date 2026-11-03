@@ -12,8 +12,12 @@ interface HeaderProps {
   onManageDefinitionsClick?: () => void;
   onDataExchangeClick?: () => void;
   onGeofencesClick?: () => void;
+  onMonitoringClick?: () => void;
+  isMonitoringActive?: boolean;
   isGeofencesActive?: boolean;
   geofenceCount?: number;
+  onSignOut: () => void;
+  signOutError?: string;
   isCreateActive: boolean;
 }
 
@@ -29,8 +33,12 @@ export function Header({
   onManageDefinitionsClick,
   onDataExchangeClick,
   onGeofencesClick,
+  onMonitoringClick,
+  isMonitoringActive = false,
   isGeofencesActive = false,
   geofenceCount,
+  onSignOut,
+  signOutError,
   isCreateActive,
 }: HeaderProps) {
   return (
@@ -128,6 +136,8 @@ export function Header({
           </button>
         )}
 
+        {onMonitoringClick && <button type="button" className={`btn ${isMonitoringActive ? 'btn-highlight' : 'btn-secondary'}`} onClick={onMonitoringClick} aria-label="Open monitoring dashboard">Monitoring</button>}
+
         <button
           type="button"
           className="btn btn-secondary btn-icon-only"
@@ -147,6 +157,11 @@ export function Header({
           <PlusIcon size={16} />
           <span>Add Entity</span>
         </button>
+      </div>
+
+      <div className="header-session-controls">
+        {signOutError && <span className="header-session-error" role="alert">{signOutError}</span>}
+        <button type="button" className="auth-signout" onClick={onSignOut}>Sign out</button>
       </div>
     </header>
   );

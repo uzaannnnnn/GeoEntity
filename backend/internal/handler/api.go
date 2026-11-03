@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"geoentity/backend/internal/entity"
+	"geoentity/backend/internal/monitoring"
 	"geoentity/backend/internal/repository"
 
 	"github.com/google/uuid"
@@ -35,8 +37,10 @@ type entityQueryStore interface {
 }
 
 type API struct {
-	store  Store
-	logger *slog.Logger
+	store             Store
+	logger            *slog.Logger
+	monitor           *monitoring.Service
+	trustedProxyCIDRs []string
 }
 
 type adminAuditStore interface {
@@ -47,7 +51,15 @@ func New(store Store, logger *slog.Logger) *API {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &API{store: store, logger: logger}
+	api := &API{store: store, logger: logger}
+	if dbStore, ok := store.(interface{ DB() *sql.DB }); ok {
+		api.monitor = monitoring.New(dbStore.DB())
+	}
+	return api
+}
+
+func (a *API) SetTrustedProxyCIDRs(cidrs []string) {
+	a.trustedProxyCIDRs = append([]string(nil), cidrs...)
 }
 
 type errorBody struct {
@@ -58,6 +70,14 @@ type errorBody struct {
 }
 
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/device/v1/observations" {
+		a.ingestObservation(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/admin/devices") || r.URL.Path == "/api/monitoring/latest" || (strings.HasPrefix(r.URL.Path, "/api/entities/") && strings.HasSuffix(r.URL.Path, "/sensors/observations")) {
+		a.monitoringAdmin(w, r)
+		return
+	}
 	if r.URL.Path == "/api/admin/audit" {
 		a.adminAudit(w, r)
 		return

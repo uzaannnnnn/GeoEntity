@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"geoentity/backend/internal/auth"
 	"geoentity/backend/internal/backup"
 	"geoentity/backend/internal/maintenance"
+	"geoentity/backend/internal/monitoring"
 	"geoentity/backend/internal/repository"
 
 	"golang.org/x/term"
@@ -25,8 +27,11 @@ func main() {
 	}
 }
 func run(args []string) error {
+	if len(args) >= 1 && args[0] == "device" {
+		return runDevice(args[1:])
+	}
 	if len(args) < 2 || args[0] != "admin" {
-		return errors.New("usage: geoentity admin provision|reset-password|backup create|list|verify|restore --from <manifest>")
+		return errors.New("usage: geoentity admin ... | geoentity device provision|list|rotate|revoke|detach|reassociate")
 	}
 	dbPath := env("GEOENTITY_DB_PATH", "./data/geoentity.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o750); err != nil {
@@ -132,6 +137,88 @@ func run(args []string) error {
 		return backup.Restore(context.Background(), dbPath, args[3])
 	default:
 		return errors.New("unknown admin command")
+	}
+}
+
+func runDevice(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: geoentity device provision|list|rotate|revoke|detach|reassociate")
+	}
+	dbPath := env("GEOENTITY_DB_PATH", "./data/geoentity.db")
+	lock, err := maintenance.Acquire(dbPath+".lock", true, true)
+	if err != nil {
+		return err
+	}
+	defer maintenance.Release(lock)
+	ctx := context.Background()
+	store, err := repository.Open(ctx, dbPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	svc := monitoring.New(store.DB())
+	switch args[0] {
+	case "provision":
+		if len(args) < 3 || len(args) > 4 {
+			return errors.New("usage: geoentity device provision <entity-id> <label> [expected-interval-seconds]")
+		}
+		var interval *int
+		if len(args) == 4 {
+			n, e := strconv.Atoi(args[3])
+			if e != nil {
+				return errors.New("expected interval must be a positive integer")
+			}
+			interval = &n
+		}
+		d, secret, e := svc.CreateCredential(ctx, args[1], args[2], interval)
+		if e != nil {
+			return e
+		}
+		fmt.Printf("Device %s provisioned. Save this credential now; it cannot be recovered:\n%s\n", d.ID, secret)
+		return nil
+	case "list":
+		if len(args) != 1 {
+			return errors.New("usage: geoentity device list")
+		}
+		items, e := svc.ListDevices(ctx, 200, "")
+		if e != nil {
+			return e
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(items)
+	case "rotate":
+		if len(args) != 2 {
+			return errors.New("usage: geoentity device rotate <device-id>")
+		}
+		secret, e := svc.Rotate(ctx, args[1])
+		if e != nil {
+			return e
+		}
+		fmt.Printf("Save this credential now; it cannot be recovered:\n%s\n", secret)
+		return nil
+	case "revoke":
+		if len(args) != 2 {
+			return errors.New("usage: geoentity device revoke <device-id>")
+		}
+		return svc.Revoke(ctx, args[1])
+	case "detach":
+		if len(args) != 2 {
+			return errors.New("usage: geoentity device detach <device-id>")
+		}
+		return svc.Detach(ctx, args[1])
+	case "reassociate":
+		if len(args) != 3 {
+			return errors.New("usage: geoentity device reassociate <device-id> <entity-id>")
+		}
+		secret, e := svc.Reassociate(ctx, args[1], args[2])
+		if e != nil {
+			return e
+		}
+		fmt.Printf("Save this credential now; it cannot be recovered:\n%s\n", secret)
+		return nil
+	default:
+		return errors.New("unknown device command")
 	}
 }
 func promptPassword() (string, error) {

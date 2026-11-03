@@ -28,8 +28,9 @@ import { geofencesApi } from './api/geofences';
 import { GeofenceDefinition } from './types/geofence';
 import { GeofenceManagerModal, GeofenceModalTab } from './components/geofences/GeofenceManagerModal';
 import { authApi } from './api/auth';
+import { MonitoringDashboard } from './components/monitoring/MonitoringDashboard';
 
-function AuthenticatedApp() {
+function AuthenticatedApp({ onSignOut, signOutError }: { onSignOut: () => void; signOutError: string }) {
   // 1. Paginated Entity List Data Source
   const [entities, setEntities] = useState<Entity[]>([]);
   const [entityMeta, setEntityMeta] = useState<EntityPageMeta | null>(null);
@@ -68,6 +69,7 @@ function AuthenticatedApp() {
   const [geofences, setGeofences] = useState<GeofenceDefinition[]>([]);
   const [selectedGeofence, setSelectedGeofence] = useState<GeofenceDefinition | null>(null);
   const [isHealthOk, setIsHealthOk] = useState<boolean | null>(null);
+  const [isMonitoringOpen, setIsMonitoringOpen] = useState(false);
 
   // Request race condition guards
   const listRequestGuard = useRef(new RequestGuard()).current;
@@ -613,10 +615,14 @@ function AuthenticatedApp() {
         }}
         isGeofencesActive={isGeofencesModalOpen}
         geofenceCount={geofences.length}
+        onSignOut={onSignOut}
+        signOutError={signOutError}
+        onMonitoringClick={() => setIsMonitoringOpen((open) => !open)}
+        isMonitoringActive={isMonitoringOpen}
         isCreateActive={sidePanelMode === 'create'}
       />
 
-      <main className="app-main-layout">
+      {isMonitoringOpen ? <MonitoringDashboard entities={entities} onClose={() => setIsMonitoringOpen(false)} /> : <main className="app-main-layout">
         {/* Interactive Leaflet Map is the primary working area */}
         <section className="map-section" aria-label="Geographic Entity Map">
           <MapView
@@ -724,7 +730,7 @@ function AuthenticatedApp() {
             />
           )}
         </aside>
-      </main>
+      </main>}
 
       {/* Delete confirmation dialog */}
       <DeleteModal
@@ -835,5 +841,5 @@ export function App() {
       </form>
     </main>
   );
-  return <><div className="auth-session-controls">{signOutError && <span role="alert">{signOutError}</span>}<button className="auth-signout" onClick={signOut}>Sign out</button></div><AuthenticatedApp /></>;
+  return <AuthenticatedApp onSignOut={signOut} signOutError={signOutError} />;
 }

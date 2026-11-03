@@ -70,6 +70,19 @@ func VerifyMigrationLedger(ctx context.Context, db *sql.DB) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	return VerifyMigrationLedgerVersion(ctx, db, len(items))
+}
+
+// VerifyMigrationLedgerVersion validates an exact known migration prefix. It is
+// used by backup verification to retain compatibility with V2.6 schema-6 files.
+func VerifyMigrationLedgerVersion(ctx context.Context, db *sql.DB, expected int) (int, error) {
+	items, err := loadMigrations(migrations)
+	if err != nil {
+		return 0, err
+	}
+	if expected < 1 || expected > len(items) {
+		return 0, fmt.Errorf("unsupported migration ledger version %d", expected)
+	}
 	rows, err := db.QueryContext(ctx, `SELECT version,name,checksum FROM schema_migrations ORDER BY version`)
 	if err != nil {
 		return 0, fmt.Errorf("read migration ledger: %w", err)
@@ -94,8 +107,8 @@ func VerifyMigrationLedger(ctx context.Context, db *sql.DB) (int, error) {
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
-	if count != len(items) {
-		return count, fmt.Errorf("migration ledger is incomplete: found %d expected %d", count, len(items))
+	if count != expected {
+		return count, fmt.Errorf("migration ledger version mismatch: found %d expected %d", count, expected)
 	}
 	return count, nil
 }
@@ -500,6 +513,38 @@ func (r *SQLite) Delete(ctx context.Context, id string) error {
 	}
 	if err = insertActivity(ctx, tx, id, "entity.deleted", snapshot); err != nil {
 		return err
+	}
+	// V2.7 keeps device tombstones and immutable observation snapshots when an
+	// entity is removed. Revoke credentials and detach devices in this same tx.
+	devices, e := tx.QueryContext(ctx, `SELECT id FROM devices WHERE entity_id=? ORDER BY id`, id)
+	if e != nil {
+		return e
+	}
+	var deviceIDs []string
+	for devices.Next() {
+		var deviceID string
+		if e = devices.Scan(&deviceID); e != nil {
+			devices.Close()
+			return e
+		}
+		deviceIDs = append(deviceIDs, deviceID)
+	}
+	e = devices.Err()
+	devices.Close()
+	if e != nil {
+		return e
+	}
+	deletedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, deviceID := range deviceIDs {
+		if _, err = tx.ExecContext(ctx, `UPDATE device_credentials SET revoked_at=? WHERE device_id=? AND revoked_at IS NULL`, deletedAt, deviceID); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE devices SET entity_id=NULL,status='detached',updated_at=?,revoked_at=COALESCE(revoked_at,?) WHERE id=?`, deletedAt, deletedAt, deviceID); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO admin_audit_events(id,occurred_at,actor_id,actor_label,action,resource_type,resource_id,payload_version,details) VALUES(lower(hex(randomblob(16))),?,'1','administrator','device.detached_by_entity_deletion','device',?,1,?)`, deletedAt, deviceID, `{"entity_id":"`+id+`"}`); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM entities WHERE id=?`, id); err != nil {
 		return err

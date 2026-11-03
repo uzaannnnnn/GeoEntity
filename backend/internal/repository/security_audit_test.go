@@ -41,7 +41,7 @@ func TestMigration006IsAdditiveAndAuditIsAppendOnly(t *testing.T) {
 	if strings.Contains(migration, "create table entity_geofence_memberships") || strings.Contains(migration, "create table geofence_events") {
 		t.Fatal("migration 006 must not create V2.5 membership or event tables")
 	}
-	if version, err := VerifyMigrationLedger(ctx, store.DB()); err != nil || version != 6 {
+	if version, err := VerifyMigrationLedger(ctx, store.DB()); err != nil || version != 7 {
 		t.Fatalf("migration ledger version=%d err=%v", version, err)
 	}
 }

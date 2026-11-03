@@ -29,6 +29,12 @@ func main() {
 		logger.Error("create database directory", "error", err)
 		os.Exit(1)
 	}
+	apiLock, err := maintenance.Acquire(dbPath+".api.lock", true, true)
+	if err != nil {
+		logger.Error("another API process owns this database", "error", err)
+		os.Exit(1)
+	}
+	defer maintenance.Release(apiLock)
 	lock, err := maintenance.Acquire(dbPath+".lock", false, false)
 	if err != nil {
 		logger.Error("lock database", "error", err)
@@ -74,9 +80,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	api := handler.New(store, logger)
+	api.SetTrustedProxyCIDRs(trustedProxies)
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           authService.Middleware(handler.New(store, logger)),
+		Handler:           authService.Middleware(api),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
